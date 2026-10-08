@@ -41,6 +41,9 @@ metadata:
 6. 垫音**不许混宽带白噪 air 层**；高通用二阶巴特沃斯 @20Hz；拼接用交叉淡化，**不许 fade to silence**。
 7. 裁切只能动「零文字零亮部」的低信息段，剪口两侧各留 ≥0.3s 有内容的画面。
 8. 封面**不要嵌进视频片头**（会改变时序、破坏音画对齐）。
+9. 图片生成模型（GPT Image2 一类）**只做概念稿**：不生成带文字/数字的图、不出成片帧、
+   不做封面底图与内联 SVG（封面底图例外须过 [assets-guide.md](assets-guide.md) §8.5 三关）。
+   画面里会动的东西一律自绘。
 
 ## 关键数值（直接照用，除非有理由改）
 
@@ -59,7 +62,7 @@ metadata:
 
 - **[README.md](README.md)** —— 全链路完整规范（选题/文案、分镜、视觉动画、音效、工程、渲染导出、剪辑、封面、发布、避坑总表、A1–A31 验收）。**写代码前至少通读「视觉动画 / 工程 / 避坑总表」三节。**
 - **[checklist.md](checklist.md)** —— 分阶段可勾选验收清单与复现命令。每次交付前逐项过。
-- **[assets-guide.md](assets-guide.md)** —— 色彩 token、字体分层、母题规格、金属渐变字、背景弱结构、音效素材检索词、封面素材抽法。
+- **[assets-guide.md](assets-guide.md)** —— 色彩 token、字体分层、母题规格、金属渐变字、背景弱结构、音效素材检索词、封面素材抽法、**图片模型素材生产（§8：什么时候用/不用、提示词模板、为什么不要一键转矢量）**。
 - **[templates/](templates/)** —— 起步模板：`shot-template.html`（单文件骨架，含引擎/附着层/音效/调试参数，3 屏 20s 可直接跑）、`preview/`（模板自检真实出图）、`audio/`（占位音效与垫音）、`tools/`（`make-foley.mjs` 生成素材、`audio-render.mjs` 离线混音、`noise-floor.mjs` 噪检、`render.mjs`/`serve.mjs`/`cdp.mjs` 逐帧渲染与本地预览、`smoke-check.mjs` 通用冒烟，以及 A1–A31 全套体检脚本）。**换项目时先读 `templates/tools/README.md` 第 3 节的常量替换表。**
 - **[examples/control-illusion/](examples/control-illusion/)** —— 完整样例：成片 HTML、四份设计与规范文档、七屏静帧、节拍表、文案表、封面工程、发布文案。**新项目先照它改，不要从零发明结构。**
 

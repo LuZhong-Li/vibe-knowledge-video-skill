@@ -1,7 +1,8 @@
 # 视觉素材与色彩规范
 
 > 本文档只管「长什么样」：色彩 token、字体分层、视觉母题、金属渐变字、背景弱结构、安全区、
-> 音效素材检索词、封面素材抽法。流程与验收见 [README.md](README.md)，勾选清单见 [checklist.md](checklist.md)。
+> 音效素材检索词、封面素材抽法、图片模型素材生产（§8）。流程与验收见 [README.md](README.md)，
+> 勾选清单见 [checklist.md](checklist.md)。
 
 ---
 
@@ -212,3 +213,123 @@ background:
 
 每次改版**新建版本目录**（`qa/v5/`、`qa/v6/`…），旧版本只归档不覆盖 ——
 排查回归时「拿上一版逐字重跑得同一数值」是证明「不是本轮引入」的唯一办法。
+
+---
+
+## 8 素材生产（图片生成模型：GPT Image2 一类）
+
+> 定位：**只做「看」的素材，不做「演」的元素。**
+> 画面里所有**会动的**东西（球 / 柱 / 刻度 / 粒子 / 线稿 / 大脑轮廓）一律代码自绘（§6.1）。
+> 生成图只允许出现在两个位置：① 开工前的**构图概念稿**（给人看，不进任何交付物）；
+> ② 封面**底图候选**（是例外，须先过 §8.5 三关）。
+
+模型侧无硬依赖：本机 vocabulary 里有 `gpt-image-2` 等型号，但**「目录能取回」不等于
+「路由已通」**，真要用先跑一次 `hypit plan` 确认，别把它当既定能力写进计划。
+
+### 8.1 三条红线
+
+1. **不让它写文字**（中文必糊）。`4×` 这类数字钩子**也归这条**：封面验收要把 `4×` 拆成
+   ≥2 个独立字形组量峰值亮度（README §10），生成模型出的字形锁不住 §5 的 `.metal` 材质与
+   `background-position`。所有文字与数字一律 DOM 排。
+2. **不让它出成片、出连续帧** —— 时序由 `t` 算（P0 ③），模型给不了可 seek 的状态。
+3. **不让它画照片级 / 复杂场景** —— 人物、实拍感、多层渐变插画一律不接（§4.6 禁止清单）。
+
+### 8.2 什么时候用它
+
+| 用途 | 输入 | 输出 | 去向 |
+| --- | --- | --- | --- |
+| 分镜构图概念稿 | 每屏一句话构图描述 | 16:9 静帧 | 写进 `docs/` 与分幕网格对照，**不进成片、不进封面** |
+| 封面构图候选 | 一句话视觉描述 | 16:9 概念图 | 只用来和 README §10 那八条验收对表；**底图仍走 §6.3 从成片抽** |
+| 母题形态参考 | 单个图形描述 | 静帧 / 线稿图 | 只当「长这样」的参照，**SVG 由人手写 path** |
+
+一句话判据：**它产出的是「给眼睛看的图」，不是「给引擎用的件」。**
+
+### 8.3 什么时候不用它
+
+- 带中文、带任何文字或数字的画面（红线 1）
+- 想要它直接产出「能内联进 HTML 的 SVG」—— 这是最容易踩的一脚，见 §8.4
+- 照片、人物、真实场景、复杂渐变插画
+- 成片帧、连续帧、转场素材
+- **已经能用 §4 母题规格画出来的东西**（球 / 刻度 / 粒子 / 柱 / 气泡）—— 自绘永远更可控
+
+### 8.4 ⚠️ 不要「一键转矢量」后直接内联
+
+「生成图 → Illustrator / Figma 一键 Image Trace → SVG → 内联进 HTML」这条链在**本风格下是净损失**：
+
+- 描摹会把 §4.4 的**柔光晕、粒子、暗角、颗粒**描成上千个杂点路径 —— 这正是「科技感 HUD」的成因（§4.6 禁止）；
+- 描摹结果**不可参数化**：颜色写不进 token（§1 只准那 8 个）、半径不跟 `rSize()` 缩放、状态不能由 `t` 驱动（P0 ①③）；
+- 单个母题（球 / 柱 / 大脑轮廓）**手写 SVG path 只有几行**，比清理描摹结果快一个量级，而且天然可控可体检。
+
+所以只有两条路：**要么它只当参考、图形照 §6.1 自绘；要么整张走位图进封面 `cover/assets/`**
+（封面本来就是位图管线，允许 `<img>`，但必须留 `assets.json` 出处）。**没有第三条路。**
+
+顺带：生成模型口头的「transparent background」不可靠，别指望它给干净透明底。
+
+### 8.5 真要当封面底图，得先过这三关
+
+封面管线（`cover-extract.mjs` / `assets.json` / `cover-C-A.html`）是按「不重画图形、
+直接取成片资产」建的（§6.3、README §10.2）。生成图要破例进来，必须**同时**满足：
+
+1. `assets.json` 里记得住出处（模型 + 提示词 + 尺寸 + 版本），能复现；
+2. 配色对得上 §1 那 8 个 token —— 不是封面方案 C 那次的一次性
+   `#D4AF37 / #B4B4B4 / #0A0A0C`（那三个值是单项目的地方色，**不是**本 skill 的 token）；
+3. 过 README §10 的八条像素验收，重点是「底部无关键文字 `y>972` 亮度 <0.10」
+   「粒子不穿过主体」「亮度 >0.95 占比 <3%」。
+
+三条缺一条，就退回「概念稿」定位。
+
+### 8.6 提示词模板（英文提示词 + 约束写死）
+
+通用写法：**英文提示词、点名色值、扁平矢量、明写「无任何文字」、明写不要照片写实**。
+色值一律填 §1 的 token，不填一次性地方色。
+
+**① 封面 / 底图概念稿**
+
+```text
+A minimalist 16:9 key visual for a psychology explainer video.
+Deep charcoal near-black background (#0A0A0A).
+Two flat bars standing on the same baseline: one tall dark-gold bar (#B8944A),
+one short muted warm-grey bar (warm white at low opacity).
+Leave the centre as clean empty negative space for a large numeric hook to be typeset later.
+Faint champagne-gold (#D7B979) particle dots, very low contrast, background only.
+Flat vector style, thin 1.5px outlines. No 3D-looking gradients, no glow rings,
+no HUD grid, no neon, no glassmorphism, no photorealism.
+Completely free of text, letters, numbers, symbols, watermarks and logos.
+Cinematic, restrained, documentary aesthetic. Low saturation.
+```
+
+**② 单屏分镜构图概念稿**
+
+```text
+16:9 frame, deep black background (#0A0A0A).
+A thin circle outline in dark gold (#B8944A), 1.5px, centred, generous margins.
+Inside: six small solid dots clustered on the left half, six hollow dots scattered on the right half.
+A faint vertical mirror line through the centre, very low opacity.
+Flat vector line art, very low contrast, lots of empty space.
+No text, no numbers, no labels, no glow, no 3D, no photorealism, no UI chrome.
+```
+
+**③ 母题形态参考（只为照着手写 SVG path）**
+
+```text
+Flat vector line-art icon: a simple brain outline, two thin strokes only,
+dark grey line on a flat mid-grey background. Minimal, geometric, no fill, no shading, no 3D.
+Square 1:1. No text, no letters, no numbers, no watermark.
+```
+
+### 8.7 与 HTML 动画层的交接
+
+- **概念稿**：只写进 `docs/`，不进 `tools/`，不参与任何体检脚本。
+- **位图（仅封面）**：落 `cover/assets/`，登记 `assets.json`；封面是**静态**排版，
+  不做描边生长 / 位移入场这类动画。
+- **图形动画**：一律自绘，挂在 SVG / CSS / Canvas 元素上。`stroke-dashoffset` 生长、
+  `transform` 入场、`opacity` 淡入全部由 `t` 驱动、`?t=45` 可定位（P0 ③）。
+
+### 8.8 落地验证（跑通这两条才算接得上）
+
+1. 生成一张封面**概念稿** → 只做构图对照，**不覆盖** `cover/assets/` 里从成片抽出来的素材。
+2. 生成一张大脑轮廓参考 → 照它**手写** SVG path（1.5px 线稿），挂进 S6 的 `t` 驱动动画，
+   跑 `film-check.mjs` / `attach-check.mjs` 全绿。
+
+验证的是「**参考 → 自绘**」，不是「生成 → 内联」。这两条过了，说明这个上游工具只是
+「多一个出素材的口子」，没有动到 HTML 时间轴、音效与文案规范。
