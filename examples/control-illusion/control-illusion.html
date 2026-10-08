@@ -1,0 +1,1931 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>控制错觉 · v3.5 全片（七屏 / 150s / 无配音）</title>
+<!--
+  ============================================================
+  控制错觉 v3.2 · 单文件知识短片（1080×1920 / 150.000s / 无配音无字幕）
+
+  设计规范：v2/00-设计文档.md（v2.3）
+  执行方案：v2/01-执行方案.md
+
+  七屏：0–9 钩子 / 9–26 爆点 / 26–48 对比 / 48–62 数据 /
+        62–90 三案例 / 90–120 机制 / 120–150 金句
+
+  v3.5「附着层」增量（在 v3.3 的 16:9 版面上，只改 S2 一处：信息层级重构）：
+    ④ 附着层：Item 主角物品 + AttachmentLabel 附着标签 + ScatteredNote 分散注释 + LightLink 扫光联动
+       —— 原来画面底部那一整段斜排正文，拆成 3 条短注释散落在圆环周边；
+          标签紧贴物品、跟随物品微动、随物品明暗（文字不再自成一层）。
+  前序（v3.2/v3.3，保留不动）：
+    ② 光影层：一束金棕柔光全片漫游（drawSweep），金属字高光随光源滑动
+    ③ 图形层：S2 圆环描边生长 / 环绕文字逐字生长 / 金球聚拢 / 灰球弥散
+    ① 时序层：stagger 递进（图形先动，文字跟随图形事件逐场出现）
+  复用开关：UPGRADED = { 1:true }，S2 过审后把 S3–S7 依次置 true 即可
+
+  P0 硬约束（§4.7）：
+    ① 字号与坐标全部 1080×1920 绝对 px，禁用 vw/vh/clamp
+    ② 外层位移 / 内层缩放分离 transform
+    ③ 所有状态由 t 计算（?t= 可定位任意一帧，逐帧出片依赖此点）
+    ④ 大字 0.04em / 小字 0.08em 字距
+    ⑤ background-clip:text 的元素禁用 text-shadow（会压暗金属字）
+    ⑥ 文字位移取整像素（避免发虚与码率浪费）
+
+  调试：?t=45 定位　?debug=1 时间码　?rate=0.5 半速
+  ============================================================
+-->
+<style>
+  :root{
+    --bg-deep:#0A0A0A; --bg-char:#141210;
+    --ink:#F5F1E8; --ink-2:rgba(245,241,232,.62); --ink-3:rgba(245,241,232,.30);
+    --gold-hi:#D7B979; --gold:#B8944A; --gold-line:#8A7655; --glow:#6B4A1A;
+    /* 下面这组数值由 JS 按 CANVAS 尺寸重算（此处为 1920×1080 基准值） */
+    --safe-x:96px; --safe-top:54px; --safe-bottom:54px;
+    --max-w:845px; --fs-l0:160px; --fs-l1:96px; --fs-l2:60px; --fs-l3:52px; --fs-l4:28px;
+    --fs-lead:52px; --fs-kicker:26px; --fs-caption:28px; --fs-idx:24px;
+    --fs-vs:34px; --fs-scale:26px; --grid-cell:64px; --grid-gap:32px; --tag-dot:9px;
+    --line:1.5px;
+    --serif:"Source Han Serif SC","Noto Serif SC","Songti SC","STSong","SimSun","Times New Roman",serif;
+    --kai:"KaiTi","STKaiti","Kaiti SC","Songti SC","SimSun",serif;
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{
+    width:100%; height:100%; background:#000; overflow:hidden; cursor:none;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+  #viewport{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:#000; }
+  #stage{
+    position:absolute; left:50%; top:50%;
+    width:1920px; height:1080px;
+    transform-origin:center center; transform:translate(-50%,-50%) scale(1);
+    overflow:hidden;
+    background:
+      radial-gradient(120% 70% at 74% 32%, #1A1510 0%, rgba(20,18,16,0) 58%),
+      linear-gradient(180deg,#0E0D0C 0%,#0A0A0A 55%,#060606 100%);
+  }
+  #bg,#grain{ position:absolute; inset:0; width:100%; height:100%; display:block; z-index:0; }
+  #grain{ mix-blend-mode:overlay; opacity:.5; z-index:1; }
+  #vignette{
+    position:absolute; inset:0; pointer-events:none; z-index:2;
+    background:
+      radial-gradient(72% 52% at 50% 44%, rgba(0,0,0,0) 40%, rgba(0,0,0,.55) 100%),
+      linear-gradient(180deg, rgba(0,0,0,.34) 0%, rgba(0,0,0,0) 20%, rgba(0,0,0,0) 76%, rgba(0,0,0,.46) 100%);
+  }
+  .layer{ position:absolute; inset:0; }
+  #structures{ z-index:3; }
+  #texts{ z-index:4; }
+  #balls{ z-index:6; }
+  #kicker{
+    position:absolute; top:var(--safe-top); left:var(--safe-x); right:var(--safe-x);
+    display:flex; justify-content:space-between; align-items:baseline; z-index:7;
+    font-family:var(--serif); font-size:var(--fs-kicker); letter-spacing:.30em;
+    color:var(--ink-3); opacity:0;
+  }
+  #kicker span:last-child{ letter-spacing:.22em; }
+  #caption{
+    position:absolute; left:var(--safe-x); right:var(--safe-x); bottom:var(--safe-bottom);
+    display:flex; justify-content:space-between; align-items:flex-end; z-index:7;
+    font-family:var(--serif); font-size:var(--fs-caption); letter-spacing:.10em;
+    color:var(--ink-3); opacity:0;
+  }
+  #caption .idx{ font-size:var(--fs-idx); letter-spacing:.24em; }
+  #progress{ position:absolute; left:0; right:0; bottom:0; height:3px; background:rgba(255,255,255,.05); z-index:7; }
+  #progress i{ display:block; height:100%; width:0%;
+    background:linear-gradient(90deg, rgba(184,148,74,.42), rgba(184,148,74,.10)); }
+  /* ---------- 文本分片 ---------- */
+  .piece{
+    position:absolute; font-family:var(--serif); color:var(--ink);
+    opacity:0; white-space:normal; max-width:var(--max-w);
+    will-change:transform,opacity,filter;
+  }
+  .piece.nowrap{ white-space:nowrap; }
+  /* v3 文字图形化：竖排 / 斜排 / 标签 / 路径文字 */
+  .piece.vert{ writing-mode:vertical-rl; text-orientation:upright; }
+  .piece.kai{ font-family:var(--kai); letter-spacing:.14em; }
+  .piece.tag{ display:flex; align-items:center; gap:16px; color:rgba(245,241,232,.78); }
+  .piece.tag i{
+    flex:0 0 auto; width:var(--tag-dot); height:var(--tag-dot); border-radius:50%;
+    background:rgba(215,185,121,.75);
+  }
+  /* 注意：.ringtext 必须是定位元素，否则内部逐字 span 会相对 #structures 左上角定位，
+     整圈文字会被推到画外（v3.1–v3.2 的真实 bug，v3.3 修正） */
+  .ringtext{ position:absolute; width:0; height:0; }
+  .ringtext span{
+    position:absolute; left:0; top:0; transform-origin:50% 50%;
+    font-family:var(--serif); white-space:nowrap; line-height:1.05;
+  }
+  .lv-l0{ font-size:var(--fs-l0); line-height:1.10; font-weight:600; letter-spacing:.02em; }
+  .lv-l1{ font-size:var(--fs-l1); line-height:1.40; font-weight:600; letter-spacing:.04em; }
+  .lv-l2{ font-size:var(--fs-l2); line-height:1.55; font-weight:500; letter-spacing:.05em; }
+  .lv-l3{ font-size:var(--fs-l3); line-height:1.75; font-weight:400; letter-spacing:.08em; color:var(--ink-2); }
+  .lv-l4{ font-size:var(--fs-l4); line-height:1.60; font-weight:400; letter-spacing:.08em; color:var(--ink-3); }
+  .lv-lead{ font-size:var(--fs-lead); line-height:1.60; font-weight:400; letter-spacing:.16em; color:var(--ink-2); }
+  /* 金属渐变字：v3.2 起高光随光源滑动（background-position 由 t 驱动），
+     底图取 200% 高、内含 3 条高光带，任何时刻字面上都有一条亮带，
+     窗口上下平移 → 高光慢慢滑过字形，而不是一张固定贴图。 */
+  .metal{
+    background-image:linear-gradient(174deg,
+      #F2E0B4 0%, #F8EAC6 6%, #FFFBE9 14%, #F6E4B8 22%, #EFDCAF 30%,
+      #F6E7C0 38%, #FFFDF0 50%, #F6E4B8 58%, #EFDCAF 66%,
+      #F6E7C0 74%, #FFFBE9 85%, #F6E4B8 93%, #F2E0B4 100%);
+    background-size:100% 200%; background-repeat:no-repeat; background-position:0% 50%;
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    -webkit-text-stroke:.6px rgba(74,48,12,.28);
+  }
+  /* ---------- v3.2 叙述性图形（S2 原型） ---------- */
+  #ringS2{ position:absolute; left:0; top:0; z-index:3; opacity:0; }
+  #ringS2 circle{ fill:none; }
+  #ringS2 .ring-line{ stroke:rgba(138,118,85,.60); stroke-linecap:round; }
+  #ringS2 .ring-inner{ stroke:rgba(184,148,74,.16); stroke-dasharray:5 11; }
+  .ring-dot{
+    position:absolute; border-radius:50%; will-change:transform,opacity;
+    background:radial-gradient(circle at 36% 32%, rgba(245,235,210,.95), rgba(215,185,121,.85) 46%, rgba(184,148,74,.55) 100%);
+    box-shadow:0 0 22px rgba(215,185,121,.45);
+  }
+  .mball{ position:absolute; border-radius:50%; will-change:transform,opacity; }
+  .mball-gold{
+    border:1.5px solid rgba(184,148,74,.72);
+    background:radial-gradient(circle at 34% 30%, rgba(215,185,121,.18), rgba(184,148,74,0) 64%);
+  }
+  .mball-gray{
+    border:1.5px solid rgba(245,241,232,.24);
+    background:radial-gradient(circle at 34% 30%, rgba(245,241,232,.06), rgba(245,241,232,0) 64%);
+  }
+  .mball-gold::after, .mball-gray::after{
+    content:''; position:absolute; inset:14%; border-radius:50%;
+    border:1.2px solid transparent;
+  }
+  .mball-gold::after{ border-top-color:rgba(215,185,121,.45); transform:rotate(-32deg); }
+  .mball-gray::after{ border-top-color:rgba(245,241,232,.18); transform:rotate(26deg); }
+  /* ---------- 母题：号码球 ---------- */
+  .ball{ position:absolute; border-radius:50%; }
+  .ball::after{ content:''; position:absolute; inset:12%; border-radius:50%; border:1.5px solid transparent; }
+  .ball .num{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-family:var(--serif); font-weight:600; letter-spacing:0; color:rgba(245,241,232,.62);
+  }
+  .ball-gold{
+    border:1.5px solid rgba(184,148,74,.62);
+    background:radial-gradient(circle at 34% 30%, rgba(215,185,121,.10), rgba(184,148,74,0) 62%);
+    box-shadow:0 0 90px rgba(107,74,26,.30);
+  }
+  .ball-gold::after{ border-top-color:rgba(215,185,121,.40); transform:rotate(-34deg); }
+  .ball-white{
+    border:1.5px solid rgba(245,241,232,.22);
+    background:radial-gradient(circle at 34% 30%, rgba(245,241,232,.07), rgba(245,241,232,0) 62%);
+  }
+  .ball-white::after{ border-top-color:rgba(245,241,232,.16); transform:rotate(28deg); }
+  /* ---------- 结构件：球阵列 / 概率刻度 / 数据框 / 图标 / 大脑 ---------- */
+  .grid3{ position:absolute; display:grid; grid-template-columns:repeat(3,var(--grid-cell)); gap:var(--grid-gap); }
+  .grid3 .cell{ width:var(--grid-cell); height:var(--grid-cell); border-radius:50%; border:1.5px solid rgba(245,241,232,.26); }
+  .grid3 .cell.gold{
+    border-color:rgba(215,185,121,.85);
+    background:radial-gradient(circle at 34% 30%, rgba(215,185,121,.55), rgba(184,148,74,.30) 62%, rgba(184,148,74,.12) 100%);
+  }
+  .divider{ position:absolute; width:1px; background:rgba(245,241,232,.14); }
+  .vs{ position:absolute; font-family:var(--serif); font-size:var(--fs-vs); letter-spacing:.16em; color:var(--ink-3); }
+  .scale{ position:absolute; height:1px; background:rgba(138,118,85,.55); }
+  .scale-tick{ position:absolute; width:1px; height:8px; background:rgba(138,118,85,.42); }
+  .scale-cursor{ position:absolute; width:9px; height:9px; border-radius:50%; background:rgba(215,185,121,.75); }
+  .scale-label{ position:absolute; font-family:var(--serif); font-size:var(--fs-scale); letter-spacing:.10em; color:var(--ink-3); }
+  .frame{ position:absolute; border:1px solid rgba(184,148,74,.42); }
+  .icon{ position:absolute; }
+  .icon .stroke{ fill:none; stroke:rgba(245,241,232,.42); stroke-width:1.5; }
+  .icon .gold{ fill:rgba(215,185,121,.55); stroke:rgba(215,185,121,.75); stroke-width:1.2; }
+  /* ---------- v4 主角物品：价格气泡 / 对比柱 / 对比线 / 大脑轮廓 / 汇聚粒子 / 金球「7」 ---------- */
+  .bubble{ position:absolute; border-radius:50%; }
+  .bubble-gold{
+    border:1.5px solid rgba(215,185,121,.78);
+    background:radial-gradient(circle at 36% 32%, rgba(215,185,121,.20), rgba(184,148,74,.04) 70%, rgba(184,148,74,0) 100%);
+    box-shadow:0 0 60px rgba(107,74,26,.30);
+  }
+  .bubble-gray{
+    border:1.5px solid rgba(245,241,232,.30);
+    background:radial-gradient(circle at 36% 32%, rgba(245,241,232,.07), rgba(245,241,232,0) 70%);
+  }
+  .vbar{ position:absolute; border-radius:2px; }
+  .vbar-gold{ background:linear-gradient(180deg, rgba(215,185,121,.85), rgba(184,148,74,.16)); box-shadow:0 0 40px rgba(107,74,26,.28); }
+  .vbar-gray{ background:linear-gradient(180deg, rgba(245,241,232,.34), rgba(245,241,232,.08)); }
+  .hline{ position:absolute; height:1.5px;
+    background:linear-gradient(90deg, rgba(138,118,85,0), rgba(215,185,121,.80), rgba(138,118,85,0)); }
+  .vaxis{ position:absolute; border-radius:2px;
+    background:linear-gradient(180deg, rgba(138,118,85,0), rgba(215,185,121,.55) 30%, rgba(215,185,121,.80)); }
+  .b7ghost{ position:absolute; opacity:0; filter:blur(1.5px); }
+  .b7ghost svg{ display:block; overflow:visible; }
+  .b7ghost .b7ring{ fill:rgba(215,185,121,.02); stroke:rgba(215,185,121,.34); stroke-width:1.6; }
+  .b7ghost .b7hot{ fill:none; stroke:rgba(255,251,233,.18); stroke-width:2.2; stroke-linecap:round; }
+  .b7ghost .b7num{
+    fill:rgba(245,241,232,.34); font-family:var(--serif); font-size:96px; font-weight:600;
+    text-anchor:middle; dominant-baseline:central;
+  }
+  .quoteline{ position:absolute; height:1.5px;
+    background:linear-gradient(90deg, rgba(184,148,74,0), rgba(215,185,121,.85), rgba(184,148,74,0)); }
+  .brainWrap{ position:absolute; z-index:2; }
+  .brainWrap svg{ display:block; }
+  .brainWrap path{ fill:none; stroke:rgba(245,241,232,.50); stroke-width:1.4; stroke-linecap:round; }
+  .brainDot{
+    position:absolute; border-radius:50%;
+    background:radial-gradient(circle at 36% 32%, rgba(245,235,210,.95), rgba(215,185,121,.85) 46%, rgba(184,148,74,.45) 100%);
+    box-shadow:0 0 26px rgba(215,185,121,.50);
+  }
+  .pnote{ position:absolute; border-radius:50%; background:rgba(215,185,121,.90); box-shadow:0 0 10px rgba(215,185,121,.55); }
+  .b7 svg{ display:block; overflow:visible; }
+  .b7 .b7ring{ fill:rgba(215,185,121,.035); stroke:rgba(215,185,121,.72); stroke-width:1.6; }
+  .b7 .b7hot{ fill:none; stroke:rgba(255,251,233,.50); stroke-width:2.2; stroke-linecap:round; }
+  .b7 .b7num{
+    fill:rgba(245,241,232,.86); font-family:var(--serif); font-size:96px; font-weight:600;
+    text-anchor:middle; dominant-baseline:central;
+  }
+  .icon .kline{ stroke:rgba(245,241,232,.55); }
+  #debug{
+    position:absolute; right:24px; bottom:20px; display:none; z-index:9;
+    font:12px/1 ui-monospace,Consolas,monospace; color:rgba(255,255,255,.45);
+  }
+</style>
+</head>
+<body>
+<div id="viewport">
+  <div id="stage">
+    <canvas id="bg" width="1920" height="1080"></canvas>
+    <canvas id="grain" width="1920" height="1080"></canvas>
+    <div id="vignette"></div>
+    <div class="layer" id="structures"></div>
+    <div class="layer" id="texts"></div>
+    <div class="layer" id="balls"></div>
+    <div id="kicker"><span>VIBE 知识大赏</span><span>控制错觉</span></div>
+    <div id="caption"><span class="note"></span><span class="idx"></span></div>
+    <div id="progress"><i></i></div>
+    <div id="debug"></div>
+  </div>
+</div>
+<script>
+(function () {
+  'use strict';
+  /* ============================================================
+     v3.3 · 16:9 画幅（§7 画幅规范）
+     ------------------------------------------------------------
+     画布基准 1920×1080；所有位置用相对坐标 rx()/ry()，所有尺寸用 rFont()/rSize()；
+     安全框 0.05–0.95（抖音 1080p：左右 96 / 上 54 / 下 1026）；
+     切分辨率只改 CANVAS.w/h（或用 ?cw=2560&ch=1440 直接出 2K），版面与动画常量不动。
+     ============================================================ */
+  var params0 = new URLSearchParams(location.search);
+  var CANVAS = { w: parseFloat(params0.get('cw') || '1920'), h: parseFloat(params0.get('ch') || '1080') };
+  if (!isFinite(CANVAS.w) || CANVAS.w < 640) CANVAS.w = 1920;
+  if (!isFinite(CANVAS.h) || CANVAS.h < 360) CANVAS.h = 1080;
+  var W = CANVAS.w, H = CANVAS.h, TOTAL = 128;
+  function rx(r) { return Math.round(r * W); }          // 相对横坐标 → 像素
+  function ry(r) { return Math.round(r * H); }          // 相对纵坐标 → 像素
+  function kH() { return H / 1080; }                    // 高度基准缩放（1080p = 1）
+  /* 字号 / 尺寸不取整：取整会让 2K 下相对尺寸偏差 ~1%（字体度量按整数像素算） */
+  function rFont(px) { return Math.round(px * kH() * 1000) / 1000; }  // 字号
+  function rSize(px) { return Math.round(px * kH() * 1000) / 1000; }  // 图形尺寸 / 线宽 / 半径
+  var SAFE = { left: rx(0.05), right: rx(0.95), top: ry(0.05), bottom: ry(0.95) };
+  var STAGE_IN = 0.80, PIECE_FADE = 0.85, FLOAT_PERIOD = 14, BREATHE_PERIOD = 6.0;
+  var OUT_LEAD = 0.90;          // 换页：上一屏提前 0.9s 开始淡出
+
+  var textsRoot = document.getElementById('texts');
+  var structRoot = document.getElementById('structures');
+  var ballsRoot = document.getElementById('balls');
+  var stageEl = document.getElementById('stage');
+  var kickerEl = document.getElementById('kicker');
+  var captionEl = document.getElementById('caption');
+  var capNote = captionEl.querySelector('.note');
+  var capIdx = captionEl.querySelector('.idx');
+  var progressBar = document.querySelector('#progress i');
+  var debugEl = document.getElementById('debug');
+  var params = params0;
+  if (params.get('debug') === '1') debugEl.style.display = 'block';
+
+  /* 画布 / 字号一次性按 CANVAS 换算：切 2K 只改 CANVAS.w/h（或 ?cw=2560&ch=1440），版面与动画常量不动 */
+  (function applyCanvas() {
+    var st = document.documentElement.style;
+    st.setProperty('--safe-x', rx(0.05) + 'px');
+    st.setProperty('--safe-top', ry(0.05) + 'px');
+    st.setProperty('--safe-bottom', ry(0.05) + 'px');
+    st.setProperty('--max-w', rx(0.44) + 'px');
+    [['--fs-l0', 160], ['--fs-l1', 96], ['--fs-l2', 60], ['--fs-l3', 52], ['--fs-l4', 28],
+     ['--fs-lead', 52], ['--fs-kicker', 26], ['--fs-caption', 28], ['--fs-idx', 24],
+     ['--fs-vs', 34], ['--fs-scale', 26]]
+      .forEach(function (kv) { st.setProperty(kv[0], rFont(kv[1]) + 'px'); });
+    st.setProperty('--grid-cell', rSize(64) + 'px');
+    st.setProperty('--grid-gap', rSize(32) + 'px');
+    st.setProperty('--tag-dot', rSize(9) + 'px');
+    stageEl.style.width = W + 'px';
+    stageEl.style.height = H + 'px';
+    var c1 = document.getElementById('bg'), c2 = document.getElementById('grain');
+    c1.width = W; c1.height = H; c2.width = W; c2.height = H;
+  })();
+
+  function clamp01(v){ return v < 0 ? 0 : v > 1 ? 1 : v; }
+  function easeOutCubic(x){ return 1 - Math.pow(1 - x, 3); }
+  function smoothstep(x){ x = clamp01(x); return x * x * (3 - 2 * x); }
+  function mulberry32(a){
+    return function(){
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      var t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  /* ============================================================
+     一·五 · 附着层（v4）· 物品主体 + 文字跟随互动
+     ------------------------------------------------------------
+     规则（设计文档 §5.5 / v4 重设计方案 §0.2）：图形是演员，文字是贴在演员身上的标签。
+       ① 每屏先定义主角物品（Item），物品先动，文字后到；
+       ② 解释句不再排成一个大文本块，拆成短注释（ScatteredNote）散在物品周边；
+       ③ 标签 / 注释与物品共用一条时间线：物品位移、缩放、明暗，标签逐帧跟随；
+       ④ 扫光扫到物品，贴在它身上的文字一起亮；物品沉入暗部，文字一起压暗。
+     物品基准坐标 ITEM_POS 被三处共用：图形本体 / 附着文字定位 / 光源关键帧 —— 改一处，三处同改。
+     ============================================================ */
+  var ITEM_POS = {
+    /* S1 钩子 */
+    ball7:  { x:0.780, y:0.360 },   // 金球「7」
+    /* S2 概念 */
+    ring:   { x:0.500, y:0.460 },   // 圆环
+    gold:   { x:0.220, y:0.550 },   // 左：金球簇（自己选号）
+    gray:   { x:0.780, y:0.550 },   // 右：灰球簇（机选）
+    /* S3 实验 */
+    lclu:   { x:0.280, y:0.480 },   // 左簇（自己挑号）
+    rclu:   { x:0.720, y:0.480 },   // 右簇（别人分配）
+    bubL:   { x:0.300, y:0.700 },   // 左价格气泡 $8.5
+    bubR:   { x:0.700, y:0.700 },   // 右价格气泡 $2.1
+    /* S4 数据 */
+    num4x:  { x:0.500, y:0.480 },   // 金属大数字 4×
+    /* S5 三案例 */
+    ball5:  { x:0.220, y:0.450 },   // 篮球
+    dice5:  { x:0.500, y:0.450 },   // 骰子
+    kline5: { x:0.780, y:0.450 },   // K 线
+    /* S6 机制 */
+    dot1:   { x:0.310, y:0.380 },   // 大脑光点 1（不确定性）
+    dot2:   { x:0.450, y:0.380 },   // 光点 2（掌控感）
+    dot3:   { x:0.310, y:0.580 },   // 光点 3（安全感）
+    dot4:   { x:0.450, y:0.580 },   // 光点 4（虚假控制）
+    /* S7 收尾 */
+    quote:  { x:0.500, y:0.440 },   // 金句
+    qline:  { x:0.500, y:0.630 }    // 粒子收拢成的水平线（客观概率）
+  };
+  /* 附着定位：物品中心 + 固定相对偏移（rx/ry）→ 标签的落点，与物品保持恒定相对距离 */
+  function at(item, ox, oy) {
+    var p = ITEM_POS[item] || ITEM_POS.ring;
+    return { x: rx(p.x + (ox || 0)), y: ry(p.y + (oy || 0)) };
+  }
+  /* attachToLabel(item, text, opts) —— 生成一条「贴着物品」的文字分片：
+       ox / oy      相对物品中心的偏移（rx/ry，恒定相对距离，不写死像素）
+       tag          带金色圆点的标签样式（楷体小字）
+       align/box    在固定宽度的盒子里对齐（散落注释靠边站时用）
+       followScale  物品缩放时标签同步轻微缩放（默认 true）
+       followAlpha  物品明暗时标签同步明暗（LightLink，默认 true）
+       opMin / opMax  标签的明暗区间（默认 0.50 ↔ 1.00，比物品本体更强的对比，读出"被点亮"） */
+  function attachToLabel(item, text, opt) {
+    opt = opt || {};
+    var a = at(item, opt.ox, opt.oy);
+    return {
+      s: opt.s, t: text, x: a.x, y: a.y,
+      lv: opt.lv || 'L3', fs: opt.fs, lh: (opt.lh == null ? 1.30 : opt.lh), w: opt.w,
+      start: opt.start, kai: true, tag: !!opt.tag,
+      rot: opt.rot, c: opt.c, opBreathe: !!opt.opBreathe, nowrap: opt.nowrap !== false,
+      attach: { item: item,
+                followScale: opt.followScale !== false,
+                followAlpha: opt.followAlpha !== false,
+                opMin: (opt.opMin == null ? 0.50 : opt.opMin),
+                opMax: (opt.opMax == null ? 1.00 : opt.opMax) }
+    };
+  }
+
+  /* ============================================================
+     一 · 七屏脚本（文案一字不改，坐标全部为画布绝对 px）
+     ============================================================ */
+  /* v6 分幕网格（S1 拉长到 6s · S7 压到 14s · 中间五幕整体顺延 2s）：
+     0–6 / 6–20 / 20–34 / 34–56 / 56–84 / 84–114 / 114–128，总长 128s。
+     三处重音绝对锁死：16.6s（S2 内）/ 51.7s（S4 内）/ 125.0s（S7 内）—— 音轨三段主重音不用重排。 */
+  var SCREENS = [
+    { id:'s1', label:'钩子',   note:'你自己选的号码',              t0:0,   t1:6,   bg:{rays:1.00, curve:0.00, glow:1.00} },
+    { id:'s2', label:'概念',   note:'ILLUSION OF CONTROL',        t0:6,  t1:20,  bg:{rays:0.22, curve:1.00, glow:0.55} },
+    { id:'s3', label:'对照实验', note:'LANGER · 1975 彩票实验',     t0:20,  t1:34,  bg:{rays:0.18, curve:0.28, glow:0.42} },
+    { id:'s4', label:'量化数据', note:'同样的概率，不同的心理定价',   t0:34,  t1:56,  bg:{rays:0.34, curve:1.00, glow:0.60} },
+    { id:'s5', label:'多场景', note:'球场 · 骰子 · 股市',           t0:56,  t1:84,  bg:{rays:0.14, curve:0.20, glow:0.36} },
+    { id:'s6', label:'机制',   note:'认知机制 · 大脑对确定性的偏好', t0:84, t1:114, bg:{rays:0.10, curve:0.16, glow:0.52} },
+    { id:'s7', label:'收尾',   note:'分清能力与运气',              t0:114, t1:128, bg:{rays:0.30, curve:0.46, glow:0.62} }
+  ];
+
+  /* S2 叙述节拍表（v3.2）：画面、光影、音效三处都只读这张表 —— 改一处，三处同时改，
+     这也是「音画同步误差 = 0」的工程保证（音效触发时刻与动画事件同源）。 */
+  /* ---------- v4 逐屏节拍表（画面 / 光影 / 音效三处都只读同一张表 → 音画同步误差为 0） ---------- */
+  var S1_T = {
+    ball: 0.00, growDur: 1.50, digit: 1.00,          // 金球轮廓生长（放慢到 1.5s）+ 数字「7」写入
+    ghost: 2.50,                                       // 镜面虚影（暗示“假象”）
+    tag1: 2.50, tag2: 3.10, tag3: 3.70,               // 三行贴球标签（贴球右侧，随球淡入）
+    title: 3.90, title2: 4.50,                        // 主标题两片（同一句）
+    note: 3.00, out: 6.00,                             // 4.5–6.0s 全部元素静止停留，留给观众读文字
+  };
+  var S2_T = {
+    ring: 6.00, ringDur: 1.50, orb: 7.20,             // 圆环轮廓生长 + 环绕字逐字排布（整幕顺延 2s）
+    gold: 8.00, gray: 8.80,                           // 金球聚拢 / 灰球弥散
+    goldTag: 9.60, grayTag: 10.30,                    // 「自己选号」「机选」
+    sweep: 11.00,                                     // 扫光从左到右扫过一次
+    title: 16.60,                                     // ★重音① 绝对锁死，不随整幕平移
+    sub: 17.40,                                       // 主标题下方一行补充注释（v7：给「控制错觉」一句大白话翻译）
+    lead: 15.80,                                      // 「心理学上，叫做」
+    note0: 10.80,                                     // 「你只是产生了一种错觉。」
+    note1: 12.00, note2: 13.00,                       // 左下散落注释
+    note3: 13.80, note4: 14.60, vert: 15.20,          // 右下散落注释 + 竖排边角注释
+    out: 19.60
+  };
+  var S3_T = {
+    clu: 20.00, bob: 21.00, drift: 22.00,             // 左右两组球浮现 → 左晃动 / 右乱跳
+    axis: 22.00,                                      // 中间对比轴线：从底部向上拉伸
+    tag1: 20.60, tag2: 21.30,
+    bubL: 23.60, bubR: 24.60,                         // 两个悬浮气泡（主观 / 客观）
+    intro1: 20.40, intro2: 21.60,
+    note1: 23.00, note2: 24.20,                       // 两组各自说明（贴本组球下方）
+    ask1: 26.00, ask2: 26.80, sweep: 28.00, out: 33.10
+  };
+  var S4_T = {
+    cluL: 34.00, cluR: 35.00, bars: 36.00,            // 左 8 球 → 右 2 球 → 对比柱从底部生长
+    stack: 38.00, stackStep: 2.00,                    // 小球一颗颗堆叠（每批一次 pulse_tap）
+    num: 51.70, label: 52.00,                         // ★重音② 绝对锁死（仍落在 S4 区间内）
+    intro1: 34.60, intro2: 35.80,
+    note1: 47.00, note2: 49.00, note3: 50.00, out: 56.00
+  };
+  var S5_T = {
+    title: 56.40,
+    ballIn: 57.00, ballHit: 60.00, tag1: 60.60, note1: 61.40, note1b: 62.00,
+    diceIn: 65.00, diceLand: 68.00, tag2: 68.60, note2: 69.40, note2b: 70.00,
+    kline: 73.00, tag3: 76.00, note3: 76.60, note3b: 77.20,
+    concl1: 80.00, concl2: 80.80, concl3: 81.60, out: 83.10
+  };
+  var S6_T = {
+    brain: 84.00, brainDur: 4.00, title: 86.00,
+    dot1: 94.00, dot2: 96.00, dot3: 98.00, dot4: 100.00,
+    n1: 101.00, n2: 102.50, n3: 104.00, n4: 105.50, n4b: 106.10, n5: 107.00, n5b: 107.60,
+    stable: 112.00, out: 113.10
+  };
+  var S7_T = {
+    parts: 114.00, line: 122.00,                       // 四角粒子加速汇聚(114–121) → 收拢成水平线(122)
+    tag: 122.00,                                       // 「客观概率」贴水平线
+    n1: 122.00, n2: 122.80,                            // 两条散落注释（重音前先就位）
+    quote: 125.00,                                     // ★重音③ 绝对锁死
+    sub: 125.90,                                       // 金句下方一行自检提示（v7：可带走的思考工具）
+    close1: 126.20, close2: 126.80,                    // 金句后 3s 内快速收束
+    dim: 126.60, out: 128
+  };
+
+  /* 文本分片：{s 屏序号, t 文案, x, y, lv, start, metal, breathe, glow, c 颜色, fs 覆盖字号}
+     v3.3 起坐标一律走 rx()/ry()（相对画布），字号走 rFont()（相对画布高度），禁止硬写像素。 */
+  var PIECES = [
+    /* ============ S1 钩子 0–9 · 主角：金球「7」（右上 · 漂浮） ============
+       文案分片（§5.4 一字不删）：你有没有发现 / 一件 / 很奇怪的事。 ｜ 同样是彩票，/ 自己选的号码，/ 总感觉更容易中奖。｜ 机选的，心里就觉得不靠谱 */
+    attachToLabel('ball7', '同样是彩票，',   { s:0, ox:-0.320, oy:-0.060, w:rSize(422), start:S1_T.tag1, fs:rFont(40), tag:true, alignRight:true }),
+    attachToLabel('ball7', '自己选的号码，', { s:0, ox:-0.320, oy: 0.015, w:rSize(422), start:S1_T.tag2, fs:rFont(40), tag:true, alignRight:true }),
+    attachToLabel('ball7', '总感觉更容易中奖。', { s:0, ox:-0.320, oy:0.090, w:rSize(422), start:S1_T.tag3, fs:rFont(40), tag:true, alignRight:true,
+                   rich:[{ t:'总感觉' }, { t:'更', c:'#C9A75E' }, { t:'容易中奖。' }] }),
+    { s:0, t:'你有没有发现一件', x:rx(0.055), y:ry(0.300), lv:'lead', start:S1_T.title,  fs:rFont(52) },
+    { s:0, t:'很奇怪的事。',    x:rx(0.055), y:ry(0.398), lv:'L1',   start:S1_T.title2, fs:rFont(88), metal:true, metalT:6, breathe:true, glow:true, nowrap:true },
+    { s:0, t:'机选的，心里就觉得不靠谱', x:rx(0.10), y:ry(0.805), lv:'L3', start:S1_T.note, fs:rFont(32), c:'rgba(245,241,232,.60)' },
+
+    /* ============ S2 概念爆点 9–26 · 主角：圆环 + 左金球簇 + 右灰球簇 ============
+       时序：9.0 圆环生长 → 10.5 环绕字 → 11.0 金球聚拢 / 11.8 灰球弥散 → 12.5/13.2 标签
+             → 14.0 扫光 → 16.6【重音①】控制错觉 → 18/20 散落注释 → 22 稳定 → 26 淡出 */
+    { s:1, t:'你只是产生了一种错觉。',       x:rx(0.10), y:ry(0.275), lv:'L3', start:S2_T.note0, fs:rFont(36), c:'rgba(245,241,232,.52)' },
+    { s:1, t:'心理学上，叫做',              x:rx(0.418), y:ry(0.252), lv:'L3', start:S2_T.lead, fs:rFont(38), kai:true },
+    { s:1, t:'控制错觉',                    x:rx(0.5) - rSize(278), y:ry(0.334), lv:'L0', start:S2_T.title, fs:rFont(136), lh:1.00, metal:true, breathe:true, glow:true, nowrap:true },
+    /* v7 新增：主标题下方一行「大白话翻译」——名词出现后立刻用一句人话解释（认知落点）。低透小字，不抢主标题。 */
+    { s:1, t:'选择权，改变不了客观概率',      x:rx(0.5) - rSize(208), y:ry(0.478), lv:'L3', start:S2_T.sub, fs:rFont(32), c:'rgba(245,241,232,.56)', nowrap:true },
+    { s:1, t:'但从概率上来说，两组号码中奖概率完全一样。', x:rx(0.10), y:ry(0.815), lv:'L3', start:S2_T.note1, fs:rFont(36), c:'rgba(245,241,232,.65)', nowrap:true },
+    { s:1, t:'没有任何差别。',              x:rx(0.10), y:ry(0.878), lv:'L3', start:S2_T.note2, fs:rFont(36), c:'rgba(245,241,232,.65)' },
+    /* 原「我们会误以为，自己拥有选择权，就能掌控随机的结果。」拆成两条右下短注（相邻，拼回即原句） */
+    { s:1, t:'我们会误以为，自己拥有选择权，', x:rx(0.600), y:ry(0.798), lv:'L3', start:S2_T.note3, fs:rFont(36), c:'rgba(245,241,232,.60)', w:rSize(653), alignRight:true },
+    { s:1, t:'就能掌控随机的结果。',          x:rx(0.700), y:ry(0.868), lv:'L3', start:S2_T.note4, fs:rFont(36), c:'rgba(245,241,232,.60)', w:rSize(422), alignRight:true },
+    attachToLabel('gold', '自己选号', { s:1, ox:-0.052, oy:-0.190, start:S2_T.goldTag, fs:rFont(40), tag:true, c:'rgba(245,241,232,.72)' }),
+    attachToLabel('gray', '机选',     { s:1, ox:-0.031, oy:-0.190, start:S2_T.grayTag, fs:rFont(40), tag:true, c:'rgba(245,241,232,.62)' }),
+    { s:1, t:'概率相同，感受不同',  x:rx(0.918), y:ry(0.300), lv:'L3', start:S2_T.vert, fs:rFont(30), kai:true, vert:true, c:'rgba(245,241,232,.34)', opBreathe:true },
+
+    /* ============ S3 对照实验 18–32 · 主角：左右球阵列 + 中间对比轴线 + 两个悬浮气泡 ============
+       轴线从底部向上拉伸；左组（自选）轻微晃动、右组（机选）随机跳动；气泡飘在两组球下方。 */
+    { s:2, t:'有一个很经典的心理学实验。',   x:rx(0.060), y:ry(0.055), lv:'L3', start:S3_T.intro1, fs:rFont(38), c:'rgba(245,241,232,.70)' },
+    { s:2, t:'研究人员让两组人参与彩票抽奖。', x:rx(0.060), y:ry(0.120), lv:'L3', start:S3_T.intro2, fs:rFont(38), c:'rgba(245,241,232,.70)' },
+    attachToLabel('lclu', '自己挑号', { s:2, ox:-0.050, oy:-0.190, start:S3_T.tag1, fs:rFont(38), tag:true }),
+    attachToLabel('rclu', '别人分配', { s:2, ox:-0.050, oy:-0.190, start:S3_T.tag2, fs:rFont(38), tag:true, c:'rgba(245,241,232,.66)' }),
+    attachToLabel('lclu', '一组可以自己挑选彩票。',   { s:2, ox:-0.190, oy:0.150, start:S3_T.note1, fs:rFont(30), c:'rgba(245,241,232,.55)' }),
+    attachToLabel('rclu', '另一组只能拿别人分配好的。', { s:2, ox:-0.120, oy:0.150, start:S3_T.note2, fs:rFont(30), c:'rgba(245,241,232,.55)' }),
+    /* 气泡里的主观 / 客观标注（方案里新加的对照文字，不与原稿 32 句冲突） */
+    /* v7：气泡里的一句话改成「主观 / 客观」显式对齐的对照句，观众一眼看出差在哪 */
+    attachToLabel('bubL', '主观：感觉更容易中奖', { s:2, ox:-0.056, oy:-0.020, start:S3_T.bubL, fs:rFont(24), c:'rgba(245,241,232,.80)' }),
+    attachToLabel('bubR', '客观：中奖概率完全相同', { s:2, ox:-0.043, oy:-0.017, start:S3_T.bubR, fs:rFont(24), c:'rgba(245,241,232,.62)' }),
+    /* 原「之后，实验者询问，愿不愿意卖掉手里的彩票。」拆成两条居中短注（相邻，拼回即原句） */
+    { s:2, t:'之后，实验者询问，',        x:rx(0.264), y:ry(0.820), lv:'L3', start:S3_T.ask1, fs:rFont(40), c:'rgba(245,241,232,.62)' },
+    { s:2, t:'愿不愿意卖掉手里的彩票。',   x:rx(0.475), y:ry(0.820), lv:'L3', start:S3_T.ask2, fs:rFont(40), c:'rgba(245,241,232,.62)' },
+
+    /* ============ S4 量化数据 32–54 · 主角：300px「4×」+ 8 球 vs 2 球 + 生长对比柱 ============ */
+    { s:3, t:'自己选号那一组，',              x:rx(0.300), y:ry(0.115), lv:'L3', start:S4_T.intro1, fs:rFont(38), c:'rgba(245,241,232,.52)' },
+    { s:3, t:'开出的售价，',                 x:rx(0.300), y:ry(0.180), lv:'L3', start:S4_T.intro2, fs:rFont(38), c:'rgba(245,241,232,.52)' },
+    /* 「感知差距」标签贴在 4× 数字正下方（附着层：数字呼吸缩放时标签同步） */
+    attachToLabel('num4x', '足足高出四倍。', { s:3, ox:-0.083, oy:0.180, start:S4_T.label, fs:rFont(44), c:'rgba(245,241,232,.78)', lv:'L3' }),
+    { s:3, t:'4×',                          x:rx(0.5) - rSize(150), y:ry(0.290), lv:'L0', start:S4_T.num, fs:rFont(300), metal:true, pop:true, glow:true, nowrap:true },
+    { s:3, t:'明明中奖概率相同。',            x:rx(0.090), y:ry(0.720), lv:'L3', start:S4_T.note3, fs:rFont(32), c:'rgba(245,241,232,.50)' },
+    { s:3, t:'仅仅因为亲手选择，',            x:rx(0.110), y:ry(0.820), lv:'L3', start:S4_T.note1, fs:rFont(36), c:'rgba(245,241,232,.60)' },
+    { s:3, t:'人们就高估了获胜的可能性。',     x:rx(0.600), y:ry(0.820), lv:'L3', start:S4_T.note2, fs:rFont(36), c:'rgba(245,241,232,.60)', w:rSize(576), alignRight:true },
+
+    /* ============ S5 三案例 62–90 · 主角：篮球 / 骰子 / K 线（依次登场） ============ */
+    { s:4, t:'这种错觉无处不在。',           x:rx(0.400), y:ry(0.090), lv:'L1', start:S5_T.title, fs:rFont(60), c:'rgba(245,241,232,.88)', nowrap:true },
+    { s:4, t:'打球时，觉得自己手感来了，',      x:rx(0.060), y:ry(0.640), lv:'L3', start:S5_T.note1,  fs:rFont(32), c:'rgba(245,241,232,.60)' },
+    { s:4, t:'下一球一定能进。',              x:rx(0.060), y:ry(0.705), lv:'L3', start:S5_T.note1b, fs:rFont(32), c:'rgba(245,241,232,.60)' },
+    attachToLabel('ball5', '手感来了', { s:4, ox:-0.045, oy: 0.115, start:S5_T.tag1, fs:rFont(40), tag:true }),
+    { s:4, t:'扔骰子前，用力搓一搓，',          x:rx(0.340), y:ry(0.640), lv:'L3', start:S5_T.note2,  fs:rFont(32), c:'rgba(245,241,232,.60)' },
+    { s:4, t:'默念想要的数字。',              x:rx(0.340), y:ry(0.705), lv:'L3', start:S5_T.note2b, fs:rFont(32), c:'rgba(245,241,232,.60)' },
+    attachToLabel('dice5', '搓一搓', { s:4, ox:-0.032, oy: 0.115, start:S5_T.tag2, fs:rFont(40), tag:true }),
+    { s:4, t:'炒股时，觉得自己判断对走势，',     x:rx(0.620), y:ry(0.640), lv:'L3', start:S5_T.note3,  fs:rFont(32), c:'rgba(245,241,232,.60)' },
+    { s:4, t:'可以掌控涨跌。',                x:rx(0.620), y:ry(0.705), lv:'L3', start:S5_T.note3b, fs:rFont(32), c:'rgba(245,241,232,.60)' },
+    attachToLabel('kline5', '判断走势', { s:4, ox:-0.055, oy: 0.115, start:S5_T.tag3, fs:rFont(40), tag:true }),
+    { s:4, t:'本质上，这些结果很大程度带有随机性。', x:rx(0.090), y:ry(0.845), lv:'L3', start:S5_T.concl1, fs:rFont(32), c:'rgba(245,241,232,.55)' },
+    { s:4, t:'但我们不愿意承认：',             x:rx(0.500), y:ry(0.845), lv:'L3', start:S5_T.concl2, fs:rFont(32), c:'rgba(245,241,232,.55)' },
+    { s:4, t:'很多事情，并不受我们掌控。',       x:rx(0.680), y:ry(0.845), lv:'L3', start:S5_T.concl3, fs:rFont(32), c:'rgba(245,241,232,.55)' },
+
+    /* ============ S6 大脑机制 90–120 · 主角：大脑轮廓 + 4 个光点 ============ */
+    { s:5, t:'为什么大脑会产生控制错觉？',      x:rx(0.060), y:ry(0.075), lv:'L1', start:S6_T.title, fs:rFont(60), c:'rgba(245,241,232,.88)' },
+    /* v7：四个光点标签改成一条读得通的因果链（渴望掌控 → 拥有选择权 → 误以为可控 → 虚假控制感），
+       比原来的「不确定性 / 掌控感 / 安全感 / 虚假控制」更贴近普通观众的日常说法。附着关系不动。 */
+    attachToLabel('dot1', '渴望掌控',   { s:5, ox:-0.115, oy:-0.030, start:S6_T.dot1, fs:rFont(36), tag:true, c:'rgba(201,167,94,.86)' }),
+    attachToLabel('dot2', '拥有选择权', { s:5, ox: 0.045, oy:-0.030, start:S6_T.dot2, fs:rFont(36), tag:true }),
+    attachToLabel('dot3', '误以为可控', { s:5, ox:-0.100, oy:-0.030, start:S6_T.dot3, fs:rFont(36), tag:true }),
+    attachToLabel('dot4', '虚假控制感', { s:5, ox: 0.045, oy:-0.030, start:S6_T.dot4, fs:rFont(36), tag:true, c:'rgba(201,167,94,.86)' }),
+    { s:5, t:'大脑讨厌不确定性。',             x:rx(0.660), y:ry(0.300), lv:'L3', start:S6_T.n1, fs:rFont(40), c:'rgba(245,241,232,.78)' },
+    { s:5, t:'它渴望掌控感，这会带来安全感。',    x:rx(0.660), y:ry(0.400), lv:'L3', start:S6_T.n2, fs:rFont(32), c:'rgba(245,241,232,.62)' },
+    { s:5, t:'哪怕这份掌控，只是虚假的。',       x:rx(0.660), y:ry(0.490), lv:'L3', start:S6_T.n3, fs:rFont(32), c:'rgba(245,241,232,.62)' },
+    { s:5, t:'当我们亲手参与、做出选择，',       x:rx(0.660), y:ry(0.580), lv:'L3', start:S6_T.n4,  fs:rFont(32), c:'rgba(245,241,232,.62)' },
+    { s:5, t:'大脑就会自动放大我们的影响力。',    x:rx(0.660), y:ry(0.650), lv:'L3', start:S6_T.n4b, fs:rFont(32), c:'rgba(245,241,232,.62)' },
+    { s:5, t:'把随机的好运，',                x:rx(0.660), y:ry(0.740), lv:'L3', start:S6_T.n5,  fs:rFont(32), c:'rgba(245,241,232,.62)' },
+    { s:5, t:'当成自己能力带来的成果。',         x:rx(0.660), y:ry(0.810), lv:'L3', start:S6_T.n5b, fs:rFont(32), c:'rgba(245,241,232,.62)' },
+
+    /* ============ S7 收尾金句 120–150 · 主角：金句 + 四角粒子向心汇聚 ============ */
+    { s:6, t:'分清能力和运气，',              x:rx(0.298), y:ry(0.360), lv:'L1', start:S7_T.quote, fs:rFont(68), metal:true, breathe:true, glow:true, nowrap:true },
+    { s:6, t:'是一种很重要的智慧。',           x:rx(0.238), y:ry(0.475), lv:'L1', start:S7_T.quote + 0.6, fs:rFont(68), metal:true, glow:true, nowrap:true },
+    /* 「客观概率」贴在那条收拢出来的水平线上（附着层：线在，标签才在） */
+    attachToLabel('qline', '客观概率', { s:6, ox:0.120, oy:-0.085, start:S7_T.tag, fs:rFont(30), tag:true, c:'rgba(245,241,232,.62)' }),
+    /* v7 新增：金句下方一行「自检提示」——把结论变成观众能带走的一个问句（附着在金句物品上，
+       跟着金句一起漂浮；低透楷体，不做第二主角）。 */
+    attachToLabel('quote', '区分你的选择，和真正可控的事', { s:6, ox:-0.125, oy:0.136, start:S7_T.sub,
+                   fs:rFont(28), kai:true, c:'rgba(245,241,232,.55)' }),
+    { s:6, t:'承认哪些事无法掌控。',           x:rx(0.905), y:ry(0.500), lv:'L3', start:S7_T.n1, fs:rFont(30), kai:true, vert:true, c:'rgba(245,241,232,.60)', opBreathe:true },
+    { s:6, t:'把精力留给真正能改变的部分。',     x:rx(0.520), y:ry(0.660), lv:'L3', start:S7_T.n2, fs:rFont(38), c:'rgba(245,241,232,.66)' },
+    { s:6, t:'随机的世界里，',                x:rx(0.255), y:ry(0.835), lv:'L3', start:S7_T.close1, fs:rFont(44), kai:true, c:'rgba(201,167,94,.80)' },
+    { s:6, t:'不要被虚假的掌控感困住。',        x:rx(0.446), y:ry(0.835), lv:'L3', start:S7_T.close2, fs:rFont(44), kai:true, c:'rgba(201,167,94,.80)' }
+  ];
+
+  /* ============================================================
+     二 · 生成 DOM
+     ============================================================ */
+  var screenNodes = [], screenTextNodes = [];
+  for (var si = 0; si < SCREENS.length; si++) { screenTextNodes.push([]); screenNodes.push({ structs: [], rings: [] }); }
+
+  /* 分片正文填充：rich = [{t,c}] 允许在同一片里给个别字换色（例：「总感觉更容易中奖。」的「更」用暗金） */
+  function fillText(el, p) {
+    if (!p.rich) { el.appendChild(document.createTextNode(p.t)); return; }
+    p.rich.forEach(function (seg) {
+      var sp = document.createElement('span');
+      sp.textContent = seg.t;
+      if (seg.c) sp.style.color = seg.c;
+      el.appendChild(sp);
+    });
+  }
+  PIECES.forEach(function (p, pIdx) {
+    var el = document.createElement('div');
+    el.className = 'piece lv-' + p.lv.toLowerCase() + (p.metal ? ' metal' : '');
+    el.textContent = p.rich ? '' : p.t;
+    el.setAttribute('data-lv', p.lv);
+    el.setAttribute('data-screen', p.s);
+    var bnd = p.attach ? p.attach.item : p.bind;         // ④ 附着层：标签 / 注释绑定的物品 id
+    if (bnd) el.setAttribute('data-bind', bnd);
+    if (p.attach) el.className += ' attach';
+    el.style.left = p.x + 'px';
+    el.style.top = p.y + 'px';
+    if (p.c) el.style.color = p.c;
+    if (p.fs) el.style.fontSize = p.fs + 'px';
+    if (p.lh) el.style.lineHeight = p.lh;
+    if (p.w) el.style.maxWidth = p.w + 'px';
+    if (p.alignRight) { el.style.textAlign = 'right'; el.style.width = (p.w || rSize(560)) + 'px'; }
+    if (p.nowrap) el.className += ' nowrap';
+    if (p.vert) el.className += ' vert';
+    if (p.kai) el.className += ' kai';
+    if (p.tag) {
+      el.className += ' tag';
+      el.textContent = '';
+      var dot = document.createElement('i');
+      el.appendChild(dot);
+      fillText(el, p);
+    }
+    textsRoot.appendChild(el);
+    /* 相位用「分片序号」而不是像素坐标：像素坐标随画幅变化，会让 2K 下悬浮相位漂移 */
+    var rec = { el: el, p: p, phase: (pIdx % 7) * 0.9 };
+    el.__rec = rec;
+    screenTextNodes[p.s].push(rec);
+  });
+
+  function mk(tag, cls, css, parent) {
+    var el = document.createElement(tag);
+    if (cls) el.className = cls;
+    if (css) for (var k in css) el.style[k] = css[k];
+    (parent || structRoot).appendChild(el);
+    return el;
+  }
+
+  /* 通用图形件（S3–S7 共用；每个件都只登记「起始时刻 + 类型」，动画在 renderStruct 里算） */
+  function pushStruct(screen, rec) { rec.sel = screen; screenNodes[screen].structs.push(rec); return rec; }
+  /* 屏末收束：图形先衰减（全片统一在切页前 1.6s 开始） */
+  function decayAt(t, sel) {
+    sel = (sel == null ? 1 : sel);
+    if (sel === SCREENS.length - 1) return 1;        // 末屏不淡出（片子停在金句上，靠整屏缓慢压暗收尾）
+    var s = SCREENS[sel];
+    /* 收束长度随屏长缩放（S1 只有 4s，固定 1.6s 会把整条后半段吃掉） */
+    var fadeLen = Math.min(1.6, (s.t1 - s.t0) * 0.28);
+    return 1 - 0.60 * smoothstep((t - (s.t1 - fadeLen)) / 1.2);
+  }
+  /* 圆球（大号母题球 / 光点） */
+  function ballEl(cls, size, x, y, num, parent) {
+    var el = mk('div', 'ball ' + cls, {
+      width:size + 'px', height:size + 'px', left:x + 'px', top:y + 'px',
+      margin:(size / -2) + 'px 0 0 ' + (size / -2) + 'px'
+    }, parent || ballsRoot);
+    if (num) {
+      var n = mk('span', 'num', { fontSize: Math.round(size * 0.44) + 'px' }, el);
+      n.textContent = num;
+      el.__num = n;
+    }
+    return el;
+  }
+  /* 价格气泡（S3）：直径 d 的圆 + 一根小尾巴 */
+  function bubble(cx, cy, d, start, cls) {
+    var el = mk('div', 'bubble ' + (cls || ''), {
+      left: cx + 'px', top: cy + 'px', width:d + 'px', height:d + 'px',
+      margin:(d / -2) + 'px 0 0 ' + (d / -2) + 'px'
+    });
+    return pushStruct(2, { el: el, kind:'bubble', start: start, d: d, cx: cx, cy: cy });
+  }
+  /* 竖向对比柱（S4）：从底部长到顶 */
+  function bar(x, yBottom, w, h, start, cls) {
+    var el = mk('div', 'vbar ' + (cls || ''), { left:x + 'px', top:yBottom + 'px', width:w + 'px', height:h + 'px' });
+    el.style.transformOrigin = '50% 100%';
+    return pushStruct(3, { el: el, kind:'barGrow', start: start });
+  }
+  /* 横向对比线（S3）：从中间向两端生长 */
+  function hline(x0, x1, y, start) {
+    var el = mk('div', 'hline', { left:x0 + 'px', top:y + 'px', width:(x1 - x0) + 'px' });
+    return pushStruct(2, { el: el, kind:'lineGrow', start: start });
+  }
+
+  /* ============================================================
+     二·五 · v3.2 叙述系统（S2 原型；组件可原样复用给 S3–S7）
+       ① 时序层 stagger：图形先动 → 文字跟着图形事件逐场出现
+       ② 光影层：金棕柔光全片漫游 + 金属字高光随光源滑动 + 局部粒子
+       ③ 图形层：圆环描边生长 / 环绕文字逐字生长 / 金球聚拢 / 灰球弥散
+     ============================================================ */
+  /* v4：七屏全部走「物品主体 + 文字附着」路径（1–7 屏 = S2–S7 与 S1 一并置 true） */
+  var UPGRADED = { 0:true, 1:true, 2:true, 3:true, 4:true, 5:true, 6:true };
+
+  /* ---------- ② 光源：全片一束正在移动的金棕柔光 ---------- */
+  /* 关键帧 = 该时刻正在叙事的主体坐标（全部走 rx/ry，切画幅不用改） */
+  /* 关键帧 = 该时刻正在说话的元素 / 它的物品（附着文字用「自身光照 ∪ 物品光照」，见 renderPiece）。
+     v4：每一屏的光源都跟着该屏主角物品走 —— 光扫到哪个物品，贴在它身上的文字一起亮。 */
+  var LIGHT_KEYS = [
+    /* 以下关键帧由 tools/light-keys.mjs 从「节拍表 + DOM 实测位置」自动生成：
+       每个元素出场 +0.6s 的时刻上都有一帧，保证光落在正在说话的元素（或它的物品）身上。 */
+    /* S1（7 个关键帧） */
+    [ 0.45, rx(0.780), ry(0.360)], [ 3.60, rx(0.537), ry(0.335)], [ 4.10, rx(0.208), ry(0.825)],
+    [ 4.20, rx(0.549), ry(0.409)], [ 4.80, rx(0.570), ry(0.483)], [ 5.00, rx(0.181), ry(0.338)],
+    [ 5.60, rx(0.198), ry(0.451)],
+    /* S2（13 个关键帧） */
+    [ 6.45, rx(0.500), ry(0.460)], [ 8.50, rx(0.220), ry(0.550)], [ 9.30, rx(0.780), ry(0.550)],
+    [10.70, rx(0.224), ry(0.379)], [11.40, rx(0.777), ry(0.382)], [11.90, rx(0.211), ry(0.303)],
+    [13.10, rx(0.313), ry(0.848)], [14.10, rx(0.171), ry(0.906)], [14.90, rx(0.770), ry(0.823)],
+    [15.70, rx(0.810), ry(0.892)], [16.30, rx(0.932), ry(0.448)], [16.90, rx(0.497), ry(0.285)],
+    [17.70, rx(0.499), ry(0.403)],
+    /* S3（13 个关键帧） */
+    [20.45, rx(0.280), ry(0.480)], [20.50, rx(0.720), ry(0.480)], [21.50, rx(0.199), ry(0.089)],
+    [21.70, rx(0.282), ry(0.317)], [22.40, rx(0.723), ry(0.312)], [22.70, rx(0.220), ry(0.150)],
+    [24.10, rx(0.244), ry(0.677)], [24.70, rx(0.301), ry(0.694)], [25.10, rx(0.700), ry(0.700)],
+    [25.30, rx(0.714), ry(0.655)], [25.70, rx(0.699), ry(0.698)], [27.10, rx(0.365), ry(0.852)],
+    [27.90, rx(0.610), ry(0.848)],
+    /* S4（12 个关键帧） */
+    [34.40, rx(0.500), ry(0.480)], [35.70, rx(0.385), ry(0.140)], [36.90, rx(0.364), ry(0.208)],
+    [40.10, rx(0.356), ry(0.445)], [43.30, rx(0.206), ry(0.731)], [45.70, rx(0.277), ry(0.706)],
+    [48.10, rx(0.201), ry(0.849)], [50.10, rx(0.750), ry(0.845)], [51.10, rx(0.171), ry(0.750)],
+    [52.20, rx(0.500), ry(0.480)], [52.80, rx(0.548), ry(0.448)], [53.10, rx(0.509), ry(0.687)],
+    /* S5（20 个关键帧） */
+    [56.40, rx(0.220), ry(0.450)], [57.50, rx(0.546), ry(0.123)], [57.50, rx(0.220), ry(0.450)],
+    [59.60, rx(0.297), ry(0.440)], [61.70, rx(0.229), ry(0.596)], [62.50, rx(0.177), ry(0.664)],
+    [63.10, rx(0.132), ry(0.733)], [65.50, rx(0.500), ry(0.450)], [67.60, rx(0.578), ry(0.436)],
+    [69.70, rx(0.510), ry(0.589)], [70.50, rx(0.439), ry(0.669)], [71.10, rx(0.412), ry(0.730)],
+    [73.50, rx(0.780), ry(0.450)], [75.30, rx(0.853), ry(0.437)], [77.10, rx(0.779), ry(0.591)],
+    [77.70, rx(0.746), ry(0.660)], [78.30, rx(0.683), ry(0.729)], [81.10, rx(0.252), ry(0.877)],
+    [81.90, rx(0.581), ry(0.875)], [82.70, rx(0.797), ry(0.870)],
+    /* S6（19 个关键帧） */
+    [84.40, rx(0.310), ry(0.380)], [87.10, rx(0.271), ry(0.109)], [90.30, rx(0.364), ry(0.161)],
+    [92.40, rx(0.264), ry(0.354)], [94.50, rx(0.310), ry(0.380)], [95.10, rx(0.244), ry(0.369)],
+    [96.50, rx(0.450), ry(0.380)], [97.10, rx(0.533), ry(0.371)], [98.50, rx(0.310), ry(0.580)],
+    [99.10, rx(0.248), ry(0.574)], [100.50, rx(0.450), ry(0.580)], [101.10, rx(0.544), ry(0.572)],
+    [102.10, rx(0.761), ry(0.336)], [103.60, rx(0.795), ry(0.425)], [105.10, rx(0.777), ry(0.511)],
+    [106.60, rx(0.777), ry(0.600)], [107.20, rx(0.795), ry(0.674)], [108.10, rx(0.723), ry(0.769)],
+    [108.70, rx(0.768), ry(0.842)],
+    /* S7（12 个关键帧） */
+    [114.40, rx(0.500), ry(0.440)], [117.60, rx(0.573), ry(0.452)], [120.05, rx(0.464), ry(0.624)],
+    [122.50, rx(0.500), ry(0.630)], [123.10, rx(0.662), ry(0.564)], [123.10, rx(0.919), ry(0.653)],
+    [123.90, rx(0.669), ry(0.689)], [125.50, rx(0.500), ry(0.440)], [126.10, rx(0.445), ry(0.408)],
+    [126.70, rx(0.422), ry(0.519)], [127.30, rx(0.347), ry(0.874)], [127.90, rx(0.603), ry(0.877)]
+  ];
+  var LIGHT_R = rSize(640);
+  function lightAt(t) {
+    var K = LIGHT_KEYS, n = K.length, i = 0;
+    if (t >= K[n - 1][0]) i = n - 2;
+    else while (i < n - 2 && t > K[i + 1][0]) i++;
+    var a = K[i], b = K[i + 1];
+    /* 插值 = smoothstep 与线性的混合：保留「缓起缓落」的手感，但关键帧节点上速度不为 0
+       （A14 要求柔光全程可感地移动；纯 smoothstep 在节点上导数为 0，长段会读成「光停住了」） */
+    var u = (t - a[0]) / Math.max(0.001, b[0] - a[0]);
+    var p = 0.74 * smoothstep(u) + 0.26 * clamp01(u);
+    var x = a[1] + (b[1] - a[1]) * p, y = a[2] + (b[2] - a[2]) * p;
+    /* 漫游抖动 + 微环绕：两圈不同频率的环绕叠加，保证任何时刻速度都不为 0（A14） */
+    var th = t * 0.62;
+    x += Math.cos(th) * 52 + Math.cos(t * 1.31 + 2.1) * 18 + Math.cos(t * 1.93 + 0.4) * 11 +
+         Math.sin(t * 0.113) * 26 + Math.sin(t * 0.047 + 1.3) * 18;
+    y += Math.sin(th) * 38 + Math.sin(t * 1.13 + 0.7) * 14 + Math.sin(t * 2.11 + 1.9) * 9 +
+         Math.cos(t * 0.091) * 22 + Math.cos(t * 0.039 + 0.7) * 14;
+    return { x:x, y:y, ang:Math.atan2(b[2] - a[2], b[1] - a[1]) };
+  }
+  /* 元素明暗：离光越近越亮（0.74 ↔ 1.00）；金属字不参与压暗，靠高光滑动响应光源 */
+  function lightFactor(cx, cy, L) {
+    var dx = cx - L.x, dy = cy - L.y;
+    var d = Math.sqrt(dx * dx + dy * dy);
+    return 0.74 + 0.26 * smoothstep(clamp01((LIGHT_R - d) / (LIGHT_R * 0.85)));
+  }
+  /* 金属高光位置：0%↔100% 缓慢上下滑动（周期 16s），并按光源偏向做倾斜补偿 */
+  function metalPos(t, rec, L) {
+    /* 流动高光：默认 16s 一个来回；短幕（S1 钩子 4s）用 rec.p.metalT 单独缩短周期，
+       否则整屏只看到高光挪一小段，A18「摆动 ≥40%」过不了。 */
+    var T = (rec.p && rec.p.metalT) || 16;
+    var v = 50 - 45 * Math.sin((t + (rec.phase || 0)) * 2 * Math.PI / T);
+    return Math.round(clamp01((v + (L.x - W / 2) / (W / 2) * 10) / 100) * 100);
+  }
+  /* A14 时间常数断言：光源漫游速度必须可感（否则等于“背景冻住”） */
+  (function () {
+    var a = lightAt(40.0), c = lightAt(40.6);
+    var v = Math.sqrt((c.x - a.x) * (c.x - a.x) + (c.y - a.y) * (c.y - a.y)) / 0.6;
+    if (v < 8) console.warn('[light] 柔光漫游速度过低（' + v.toFixed(1) + 'px/s），检查时间常数');
+  })();
+
+  /* ---------- ④ 附着层 · 主角物品注册表（Item）----------
+     每个物品每帧只更新四个量：微动位移 / 缩放 / 光照因子 / 出场权重；
+     贴着它的文字全部读这四个量 —— 图形动，文字跟着动；图形亮，文字跟着亮。 */
+  var ITEMS = {
+    ring: { cx:rx(ITEM_POS.ring.x), cy:ry(ITEM_POS.ring.y), ev:S2_T.ring, dx:0, dy:0, k:1, light:1, on:0 },
+    gold: { cx:rx(ITEM_POS.gold.x), cy:ry(ITEM_POS.gold.y), ev:S2_T.gold, dx:0, dy:0, k:1, light:1, on:0 },
+    gray: { cx:rx(ITEM_POS.gray.x), cy:ry(ITEM_POS.gray.y), ev:S2_T.gray, dx:0, dy:0, k:1, light:1, on:0 },
+    ball7: { cx:rx(ITEM_POS.ball7.x), cy:ry(ITEM_POS.ball7.y), ev:S1_T.ball, dx:0, dy:0, k:1, light:1, on:1 },
+    lclu: { cx:rx(ITEM_POS.lclu.x), cy:ry(ITEM_POS.lclu.y), ev:S3_T.clu, dx:0, dy:0, k:1, light:1, on:0 },
+    rclu: { cx:rx(ITEM_POS.rclu.x), cy:ry(ITEM_POS.rclu.y), ev:S3_T.clu, dx:0, dy:0, k:1, light:1, on:0 },
+    bubL: { cx:rx(ITEM_POS.bubL.x), cy:ry(ITEM_POS.bubL.y), ev:S3_T.bubL, dx:0, dy:0, k:0.8, light:1, on:0 },
+    bubR: { cx:rx(ITEM_POS.bubR.x), cy:ry(ITEM_POS.bubR.y), ev:S3_T.bubR, dx:0, dy:0, k:0.8, light:1, on:0 },
+    num4x: { cx:rx(ITEM_POS.num4x.x), cy:ry(ITEM_POS.num4x.y), ev:S4_T.num, dx:0, dy:0, k:1, light:1, on:0 },
+    ball5: { cx:rx(ITEM_POS.ball5.x), cy:ry(ITEM_POS.ball5.y), ev:S5_T.ballIn, dx:0, dy:0, k:1, light:1, on:0 },
+    dice5: { cx:rx(ITEM_POS.dice5.x), cy:ry(ITEM_POS.dice5.y), ev:S5_T.diceIn, dx:0, dy:0, k:1, light:1, on:0 },
+    kline5: { cx:rx(ITEM_POS.kline5.x), cy:ry(ITEM_POS.kline5.y), ev:S5_T.kline, dx:0, dy:0, k:1, light:1, on:0 },
+    dot1: { cx:rx(ITEM_POS.dot1.x), cy:ry(ITEM_POS.dot1.y), ev:S6_T.dot1, dx:0, dy:0, k:1, light:1, on:0 },
+    dot2: { cx:rx(ITEM_POS.dot2.x), cy:ry(ITEM_POS.dot2.y), ev:S6_T.dot2, dx:0, dy:0, k:1, light:1, on:0 },
+    dot3: { cx:rx(ITEM_POS.dot3.x), cy:ry(ITEM_POS.dot3.y), ev:S6_T.dot3, dx:0, dy:0, k:1, light:1, on:0 },
+    dot4: { cx:rx(ITEM_POS.dot4.x), cy:ry(ITEM_POS.dot4.y), ev:S6_T.dot4, dx:0, dy:0, k:1, light:1, on:0 },
+    quote: { cx:rx(ITEM_POS.quote.x), cy:ry(ITEM_POS.quote.y), ev:S7_T.quote, dx:0, dy:0, k:1, light:1, on:0 },
+    qline: { cx:rx(ITEM_POS.qline.x), cy:ry(ITEM_POS.qline.y), ev:S7_T.line, dx:0, dy:0, k:1, light:1, on:0 }
+  };
+  /* 每个物品的运动规格（漂浮 / 呼吸 / 聚散 / 退场）；附着文字只读它，不自己编时间线 */
+  var ITEM_SPEC = {
+    ball7:  { ev:S1_T.ball,  out:S1_T.out,  ay:rSize(12), Ty:14.0, br:0.020, Tb:6.0 },
+    ring:   { ev:S2_T.ring,  out:S2_T.out,  ay:rSize(4),  Ty:9.0,  br:0.012, Tb:9.0 },
+    gold:   { ev:S2_T.gold,  out:S2_T.out,  ax:rSize(5),  ay:rSize(6),  Tx:5.0, Ty:4.0, kTo:0.50, kT:0.8 },
+    gray:   { ev:S2_T.gray,  out:S2_T.out,  ax:rSize(6),  ay:rSize(7),  Tx:4.6, Ty:3.6, kTo:1.45, kT:1.2, p0:2.2 },
+    lclu:   { ev:S3_T.clu,   out:S3_T.out,  ay:rSize(6),  Ty:2.6 },
+    rclu:   { ev:S3_T.clu,   out:S3_T.out,  ax:rSize(5),  ay:rSize(7),  Tx:5.4, Ty:4.2, p0:1.1 },
+    bubL:   { ev:S3_T.bubL,  out:S3_T.out,  kFrom:0.80, kTo:1.00, kT:0.45 },
+    bubR:   { ev:S3_T.bubR,  out:S3_T.out,  kFrom:0.80, kTo:1.00, kT:0.45 },
+    num4x:  { ev:S4_T.num,   out:S4_T.out,  br:0.015, Tb:7.0 },
+    ball5:  { ev:S5_T.ballIn, out:S5_T.out, ay:rSize(9), Ty:3.4 },
+    dice5:  { ev:S5_T.diceIn, out:S5_T.out, ay:rSize(5), Ty:4.4, p0:0.8 },
+    kline5: { ev:S5_T.kline,  out:S5_T.out, ay:rSize(3), Ty:5.2, p0:1.7 },
+    dot1:   { ev:S6_T.dot1,  out:S6_T.out, ay:rSize(3), Ty:3.0 },
+    dot2:   { ev:S6_T.dot2,  out:S6_T.out, ay:rSize(3), Ty:3.0, p0:0.7 },
+    dot3:   { ev:S6_T.dot3,  out:S6_T.out, ay:rSize(3), Ty:3.0, p0:1.4 },
+    dot4:   { ev:S6_T.dot4,  out:S6_T.out, ay:rSize(3), Ty:3.0, p0:2.1 },
+    quote:  { ev:S7_T.quote, out:S7_T.out, ay:rSize(3), Ty:11.0 },
+    qline:  { ev:S7_T.line,  out:S7_T.out, ay:rSize(2), Ty:13.0 }
+  };
+  function updateItems(t, L) {
+    var TW = Math.PI * 2, k;
+    for (k in ITEMS) if (Object.prototype.hasOwnProperty.call(ITEMS, k)) {
+      var it = ITEMS[k], sp = ITEM_SPEC[k] || { ev:0, out:150 };
+      var gap = Math.max(0, t - sp.ev);
+      var born = smoothstep(gap / (sp.ramp || 0.35));
+      var fade = 1 - 0.62 * smoothstep((t - (sp.out - 1.6)) / 1.2);
+      it.on = born * fade;
+      it.dx = sp.ax ? Math.round(Math.sin(t * TW / (sp.Tx || 5) + (sp.p0 || 0)) * sp.ax) : 0;
+      it.dy = sp.ay ? Math.round(Math.sin(t * TW / (sp.Ty || 14) + (sp.p0 || 0)) * sp.ay) : 0;
+      /* 缩放：聚散（kFrom→kTo）+ 呼吸（br），两者都作用在同一个 k 上 */
+      var base = (sp.kTo != null)
+        ? (sp.kFrom == null ? 1 : sp.kFrom) + ((sp.kTo - (sp.kFrom == null ? 1 : sp.kFrom)) * smoothstep(gap / (sp.kT || 1)))
+        : 1;
+      it.k = base + (sp.br || 0) * Math.sin(gap * TW / (sp.Tb || 6)) * smoothstep(gap / 0.5);
+      it.light = lightFactor(it.cx + it.dx, it.cy + it.dy, L);
+    }
+    return ITEMS;
+  }
+
+  /* ---------- ③ S2 叙事图形之一：圆环描边生长 ---------- */
+  var RING_S2 = { cx:rx(ITEM_POS.ring.x), cy:ry(ITEM_POS.ring.y), r:rSize(324),
+                  draw0:S2_T.ring, drawDur:S2_T.ringDur,
+                  text0:S2_T.orb, textDur:3.60, spin0:12.40, spin:1.8, dec0:24.40 };
+  var RING_S2_C = 2 * Math.PI * RING_S2.r;
+  if (RING_S2.drawDur < 1.2) console.warn('[ring] 轮廓生长时长过短，检查时间常数:', RING_S2.drawDur);
+  if (RING_S2.spin < 0.3) console.warn('[orbit] 环绕文字转速过低，检查时间常数:', RING_S2.spin);
+  (function () {
+    var ns2 = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(ns2, 'svg');
+    svg.id = 'ringS2';
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    svg.setAttribute('width', String(W)); svg.setAttribute('height', String(H));
+    var rot = ' transform="rotate(-90 ' + RING_S2.cx + ' ' + RING_S2.cy + ')"';
+    svg.innerHTML =
+      '<circle class="ring-inner" cx="' + RING_S2.cx + '" cy="' + RING_S2.cy + '" r="' + (RING_S2.r - rSize(30)) + '" stroke-width="1"/>' +
+      /* 光扫过圆环时提亮的那一小段（光源角度决定它在环上的位置） */
+      '<circle class="ring-hot" cx="' + RING_S2.cx + '" cy="' + RING_S2.cy + '" r="' + RING_S2.r + '" stroke-width="' + (3 * kH()).toFixed(2) + '" ' +
+        'stroke="rgba(215,185,121,0)" stroke-linecap="round" ' +
+        'stroke-dasharray="' + rSize(150) + ' ' + (RING_S2_C - rSize(150)).toFixed(1) + '"' + rot + '/>' +
+      '<circle class="ring-line" cx="' + RING_S2.cx + '" cy="' + RING_S2.cy + '" r="' + RING_S2.r + '" stroke-width="' + (1.5 * kH()).toFixed(2) + '" ' +
+        'stroke-dasharray="' + RING_S2_C.toFixed(1) + '" stroke-dashoffset="' + RING_S2_C.toFixed(1) + '"' + rot + '/>';
+    structRoot.appendChild(svg);
+    svg.__rec = { el: svg, start: RING_S2.draw0, kind: 'ringDraw', sel: 1 };
+    screenNodes[1].structs.push(svg.__rec);
+  })();
+
+  /* 环绕路径文字（v7 改为 14 字：亲手选择 / 主观掌控 / 随机结果）：沿圆环逐字排布
+     → 低速自转 → 呼吸缩放 + 随光呼吸的透明度。字数变化只影响逐字角步长，动画参数不动。 */
+  (function () {
+    var text = '亲手选择·主观掌控·随机结果';
+    var box = mk('div', 'ringtext', { left: RING_S2.cx + 'px', top: RING_S2.cy + 'px', width:'0px', height:'0px' });
+    var chars = text.split(''), step = 360 / chars.length, spans = [];
+    for (var i = 0; i < chars.length; i++) {
+      var s = document.createElement('span');
+      s.textContent = chars[i];
+      s.style.fontSize = rFont(24) + 'px';
+      s.style.color = 'rgba(245,241,232,.80)';   // 基准色，实际亮度由逐字 opacity 调制
+      box.appendChild(s);
+      spans.push({ el:s, angle:i * step });
+    }
+    screenNodes[1].structs.push({ el:box, spans:spans, r:rSize(344), spin:RING_S2.spin, sel:1,
+                                  start:RING_S2.text0, kind:'ringTextS2' });
+  })();
+
+  /* ---------- ③ S2 主角物品之二：6 颗金球（聚拢）/ 6 颗灰球（弥散）+ 环心小金球 ----------
+     球的位置每一帧都从 ITEMS[item] 的 (cx+dx, cy+dy, k) 算出来 —— 球、贴球标签、光源三处
+     共用同一份数据，所以「标签跟着球走」是结构保证，不是巧合。 */
+  function ballRing(n, size, cls, r, ph0, item) {
+    var arr = [];
+    for (var i = 0; i < n; i++) {
+      var el = mk('div', 'mball ' + cls, { left:'0px', top:'0px', width:size + 'px', height:size + 'px' }, ballsRoot);
+      if (item) el.setAttribute('data-item', item);
+      arr.push({ el: el,
+                 a: (i / n) * Math.PI * 2 + (ph0 || 0), ph: i * 1.7, r: r, size: size });
+    }
+    return arr;
+  }
+  screenNodes[1].structs.push({ kind:'cluster', item:'gold', sel:1, els: ballRing(6, rSize(44), 'mball-gold', rSize(150), 0, 'gold') });
+  screenNodes[1].structs.push({ kind:'cluster', item:'gray', sel:1, els: ballRing(6, rSize(44), 'mball-gray', rSize(78), 0.5, 'gray') });
+  /* 环心小金球：3s 周期呼吸脉动（主标题压在它上方） */
+  var coreEl = mk('div', 'mball mball-gold', { left:RING_S2.cx + 'px', top:ry(0.600) + 'px',
+                                               width:rSize(34) + 'px', height:rSize(34) + 'px' }, ballsRoot);
+  coreEl.setAttribute('data-item', 'ring');
+  screenNodes[1].structs.push({ kind:'coreBall', cx:RING_S2.cx, cy:ry(0.600), r:rSize(34), sel:1, el: coreEl });
+
+  /* ============================================================
+     二·六 · 音效层（设计文档 §6）
+     ------------------------------------------------------------
+     ① 触发只挂在「图形动作 + 三处核心标题」上，不跟文字弹出；
+     ② 音量基线：BGM −18dB / 普通 foley −22…−16dB / 重音最高 −12dB；
+     ③ 短触发、不循环；同一时刻最多 2 个音效（超出则丢弃低优先级）；
+     ④ 触发时刻取自 S2_T / RING_S2（与画面同一批常量）→ 音画不漂移；
+     ⑤ 关闭音效（?sfx=0 或不开音效）时，画面叙事依然完整。
+     素材：v2/audio/*.wav（占位包，可直接用授权采样同名覆盖）
+     ============================================================ */
+  var SFX_DEF = {
+    soft_tick:  { file:'audio/soft_tick.wav',  gain:-22, pri:1, minGap:0.18, why:'轻玻璃轻触 · 文字/标签淡入' },
+    swish_soft: { file:'audio/swish_soft.wav', gain:-17, pri:2, minGap:0.35, why:'柔和气流滑音 · 线条生长/转场' },
+    low_impact: { file:'audio/low_impact.wav', gain:-12, pri:3, minGap:1.50, why:'低频闷咚 · 核心标题（全片仅三处）' },
+    pulse_tap:  { file:'audio/pulse_tap.wav',  gain:-21, pri:1, minGap:0.30, why:'微弱共振脉冲 · 球体/光点' },
+    sub_rise:   { file:'audio/sub_rise.wav',   gain:-20, pri:1, minGap:2.00, why:'缓慢升调 · 轮廓描边' }
+  };
+  var SFX_MAX_CONCURRENT = 2;
+  var SFX = { buf:{}, el:{}, tried:{}, active:[], last:{}, log:[], ctx:null, on:false, bgm:null, resync:true, master:1 };
+  function db2lin(d) { return Math.pow(10, d / 20); }
+
+  /* 音效事件表：时刻全部来自驱动画面的同一批常量 */
+  var SFX_EVENTS = (function () {
+    var E = [];
+    function push(t, s, g, why) {
+      if (t == null || !isFinite(t)) return;
+      E.push({ t: +t.toFixed(3), s: s, g: (g == null ? SFX_DEF[s].gain : g), why: why });
+    }
+    /* 取某句文案的出场时刻（音效挂在图形/画面上，但时刻与画面对齐） */
+    function at(text) {
+      for (var i = 0; i < PIECES.length; i++) if (PIECES[i].t === text) return PIECES[i].start;
+      return null;
+    }
+    /* v6 全片事件表：音效只挂在「物品动作 + 核心标题」上，不跟文字弹出。
+       三处重音严格锁定 16.6s「控制错觉」/ 51.7s「4×」/ 125.0s 收尾金句（时间码与上一版一致，音轨对齐不变）。 */
+    /* S1 钩子 0–6（末尾 4.5–6.0s 静默留白，只为读文字） */
+    push(S1_T.ball,  'swish_soft', -17, 'S1 金球轮廓浮现（音包络放宽）');
+    push(S1_T.ghost, 'soft_tick',  -22, 'S1 镜面虚影点亮');
+    /* S2 概念 6–20 */
+    push(S2_T.ring,   'swish_soft', -17, 'S2 圆环线条生长');
+    push(S2_T.gold,   'soft_tick',  -22, 'S2 金球簇（自选）浮现');
+    push(S2_T.gray,   'soft_tick',  -22, 'S2 灰球簇（机选）浮现');
+    push(S2_T.title,  'low_impact', -12, 'S2 主标题「控制错觉」← 重音①');
+    /* S3 对照实验 20–34 */
+    push(S3_T.clu,  'swish_soft', -19, 'S3 两组球阵列 + 对比轴线展开');
+    push(S3_T.bubL, 'soft_tick',  -22, 'S3 左气泡弹出（主观感觉）');
+    push(S3_T.bubR, 'soft_tick',  -22, 'S3 右气泡弹出（客观概率）');
+    push(S3_T.sweep,'pulse_tap',  -21, 'S3 轴线高亮');
+    /* S4 量化数据 34–56 */
+    push(S4_T.bars,  'swish_soft', -19, 'S4 对比柱从底部生长');
+    push(S4_T.stack,          'pulse_tap', -21, 'S4 左柱小球第 1 批堆叠');
+    push(S4_T.stack + 2.0,    'pulse_tap', -21, 'S4 左柱小球第 2 批堆叠');
+    push(S4_T.stack + 4.0,    'pulse_tap', -21, 'S4 左柱小球第 3 批堆叠');
+    push(S4_T.stack + 6.0,    'pulse_tap', -21, 'S4 左柱小球第 4 批堆叠');
+    push(S4_T.num,   'low_impact', -12, 'S4 巨大「4×」浮现 ← 重音②');
+    /* S5 多场景 56–84（三栏依次登场） */
+    push(S5_T.ballIn, 'swish_soft', -20, 'S5 篮球出现');
+    push(S5_T.ballHit,'pulse_tap',  -21, 'S5 篮球弹跳落点');
+    push(S5_T.diceIn, 'swish_soft', -20, 'S5 骰子出现并滚落');
+    push(S5_T.diceLand,'soft_tick', -22, 'S5 骰子停下');
+    push(S5_T.kline,  'swish_soft', -20, 'S5 K 线从左向右生长');
+    push(S5_T.tag3 - 1.0,'pulse_tap', -21, 'S5 K 线拐点点亮');
+    /* S6 机制 84–114 */
+    push(S6_T.brain, 'swish_soft', -20, 'S6 大脑轮廓逐段描边');
+    push(S6_T.dot1,  'pulse_tap',  -21, 'S6 光点 1 亮起');
+    push(S6_T.dot2,  'pulse_tap',  -21, 'S6 光点 2 亮起');
+    push(S6_T.dot3,  'pulse_tap',  -21, 'S6 光点 3 亮起');
+    push(S6_T.dot4,  'pulse_tap',  -21, 'S6 光点 4 亮起');
+    push(S6_T.stable,'soft_tick',  -22, 'S6 全部光点稳定');
+    /* S7 收尾 114–128（粒子加速汇聚 → 水平线 → 金句，之后 3s 快速收束） */
+    push(S7_T.parts, 'swish_soft', -19, 'S7 四角粒子向中心汇聚');
+    push(S7_T.quote, 'low_impact', -12, 'S7 收尾金句 ← 重音③');
+    return E.sort(function (a, b) { return a.t - b.t; });
+  })();
+
+  function audioCtx() {
+    if (SFX.ctx) return SFX.ctx;
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    try { SFX.ctx = new AC(); } catch (e) { SFX.ctx = null; }
+    return SFX.ctx;
+  }
+  function sfxLoadAsElement(name) {
+    if (SFX.el[name]) return;
+    try {
+      var a = new Audio(SFX_DEF[name].file);
+      a.preload = 'auto'; a.volume = 0;
+      SFX.el[name] = a;
+    } catch (e) { /* 静默：缺素材不影响画面 */ }
+  }
+  function sfxLoad(name) {
+    if (SFX.tried[name]) return;
+    SFX.tried[name] = true;
+    var ctx = audioCtx(), d = SFX_DEF[name];
+    if (!ctx) { sfxLoadAsElement(name); return; }
+    try {
+      fetch(d.file).then(function (r) {
+        if (!r.ok) throw new Error('http ' + r.status);
+        return r.arrayBuffer();
+      }).then(function (ab) {
+        return new Promise(function (res, rej) { ctx.decodeAudioData(ab, res, rej); });
+      }).then(function (buf) {
+        SFX.buf[name] = buf;
+      }).catch(function () { sfxLoadAsElement(name); });     // file:// 下 fetch 受限 → 退回媒体元素
+    } catch (e) { sfxLoadAsElement(name); }
+  }
+  var SFX_LOOK = 0.30;      // 提前量：每帧把未来 0.3s 内的事件排好队（消除帧量化抖动）
+  var ELEM_LEAD = 0.012;    // 媒体元素起播延迟补偿（file:// 下退回 <audio> 时用）
+  function sfxPlay(e, clockNow, dt) {
+    var d = SFX_DEF[e.s], name = e.s;
+    if (!d || !SFX.on) return false;
+    if (!SFX.buf[name] && !SFX.el[name]) { sfxLoad(name); return false; }
+    /* 并发上限（按计划触发时刻算）：同一时刻最多 2 个；重音（pri=3）优先 */
+    var alive = 0;
+    for (var i = 0; i < SFX.active.length; i++) if (SFX.active[i] > clockNow) alive++;
+    if (alive >= SFX_MAX_CONCURRENT && d.pri < 3) return false;
+    if (SFX.last[name] != null && clockNow - SFX.last[name] < d.minGap) return false;
+    SFX.last[name] = clockNow;
+    var g = db2lin(e.g == null ? d.gain : e.g) * SFX.master;
+    var plan = clockNow + Math.max(0, dt);      // 计划触发时刻（与画面同源）
+    var call = clockNow;                        // 实际发起播放的时刻
+    var played = false;
+    if (SFX.ctx && SFX.buf[name]) {
+      /* 有 AudioContext 且能解码：采样级精确调度（误差 = 0） */
+      var src = SFX.ctx.createBufferSource(), gn = SFX.ctx.createGain();
+      src.buffer = SFX.buf[name];
+      gn.gain.value = g;
+      src.connect(gn); gn.connect(SFX.ctx.destination);
+      try { src.start(plan); played = true; } catch (err) { played = false; }
+      SFX.active.push(plan + SFX.buf[name].duration);
+    } else if (SFX.el[name]) {
+      /* file:// 退路：媒体元素 + 定时器提前触发，起播延迟按 ELEM_LEAD 补偿 */
+      var el = SFX.el[name], wait = Math.max(0, (plan - clockNow - ELEM_LEAD) * 1000);
+      var fire = function () {
+        try {
+          el.currentTime = 0;
+          el.volume = Math.max(0, Math.min(1, g));
+          var p = el.play(); if (p && p.catch) p.catch(function () {});
+        } catch (err) { /* 静默 */ }
+        SFX.log.push({ t: e.t, s: name, g: e.g, why: e.why, plan: +plan.toFixed(3),
+                       call: +(SFX.ctx ? SFX.ctx.currentTime : performance.now() / 1000).toFixed(3),
+                       path: 'element' });
+        if (SFX.log.length > 400) SFX.log.shift();
+      };
+      if (wait <= 4) fire(); else setTimeout(fire, wait);
+      SFX.active.push(plan + 0.35);
+      played = true;
+      return true;
+    }
+    if (played) {
+      SFX.log.push({ t: e.t, s: name, g: e.g, why: e.why, plan: +plan.toFixed(3),
+                     call: +call.toFixed(3), path: 'webaudio' });
+      if (SFX.log.length > 400) SFX.log.shift();
+    }
+    return played;
+  }
+  /* 音画同源调度：每帧按"该帧的视频时间 ↔ 同一瞬间的音频时钟"作为锚点，
+     把未来 SFX_LOOK 秒内的事件按精确时刻排好，而不是等这一帧才发现要响。 */
+  function sfxTick(prevT, t, running, clockNow) {
+    if (!SFX.on || !running || prevT == null || prevT < 0 || t <= prevT || (t - prevT) > 0.30) {
+      SFX.resync = true; return;
+    }
+    if (SFX.resync) {
+      /* 起播 / 拖动进度后：已过去的事件标记处理掉，不补响（避免一进来就一串音效） */
+      for (var j = 0; j < SFX_EVENTS.length; j++) if (SFX_EVENTS[j].t <= t) SFX_EVENTS[j]._done = true;
+      SFX.resync = false;
+    }
+    for (var i = 0; i < SFX_EVENTS.length; i++) {
+      var e = SFX_EVENTS[i];
+      if (e._done) continue;
+      if (e.t > t + SFX_LOOK) break;         // 事件表已按 t 排序
+      e._done = true;
+      sfxPlay(e, clockNow, e.t - t);
+    }
+  }
+  function bgmStart() {
+    if (SFX.bgm) return;
+    var src = params.get('bgm');
+    if (src === '0') return;
+    if (src === null) src = 'audio/ambient_pad.mp3';
+    var volDb = parseFloat(params.get('bgmvol') || '-19.2');
+    if (!isFinite(volDb)) volDb = -19.2;
+    try {
+      var a = new Audio(src);
+      a.loop = true; a.preload = 'auto';
+      a.volume = Math.max(0, Math.min(1, db2lin(volDb)));   // §6：氛围垫音 −19.2dB（= 原档 −18dB 的实际电平，见 §6.5）
+      try { a.currentTime = Math.max(0, curT || 0); } catch (e) {}
+      var p = a.play(); if (p && p.catch) p.catch(function () {});
+      SFX.bgm = a;
+    } catch (e) { /* 缺 BGM 也不影响画面 */ }
+  }
+  function bgmSync(t) {
+    var a = SFX.bgm;
+    if (!a || !isFinite(a.duration) || a.duration < 5) return;
+    var want = ((t % a.duration) + a.duration) % a.duration;
+    if (Math.abs(a.currentTime - want) > 0.35) { try { a.currentTime = want; } catch (e) {} }
+  }
+  function audioEnable() {
+    if (SFX.on) return;
+    var ctx = audioCtx();
+    if (ctx && ctx.state === 'suspended') { try { var r = ctx.resume(); if (r && r.catch) r.catch(function () {}); } catch (e) {} }
+    SFX.on = true;
+    for (var k in SFX_DEF) if (Object.prototype.hasOwnProperty.call(SFX_DEF, k)) sfxLoad(k);
+    SFX.clock = null;
+    bgmStart();
+  }
+  /* 浏览器自动播放策略：默认等第一次交互；?sfx=1 主动尝试；?sfx=0 全程静音 */
+  var sfxParam = params.get('sfx');
+  if (sfxParam === '1') audioEnable();
+  if (sfxParam !== '0') {
+    ['pointerdown', 'keydown', 'touchstart'].forEach(function (ev) {
+      window.addEventListener(ev, function () { audioEnable(); }, { once: true, passive: true });
+    });
+  }
+  /* ---------- 通用图形件：球云（固定簇心）/ 图标 / 内联 SVG ---------- */
+  function cloud(screen, cx, cy, n, r, size, cls, start, seed, item, stagger) {
+    var els = [];
+    for (var i = 0; i < n; i++) {
+      var a = (seed || 0) + i * (Math.PI * 2 / n) + (i % 2) * 0.34;
+      var rr = r * (0.70 + 0.36 * (((i * 37) % 11) / 11));
+      var el = mk('div', 'mball ' + cls, { left:'0px', top:'0px', width:size + 'px', height:size + 'px' }, ballsRoot);
+      if (item) el.setAttribute('data-item', item);
+      els.push({ el: el,
+                 x: Math.cos(a) * rr, y: Math.sin(a) * rr * 0.82, ph: i * 1.35,
+                 st: (stagger || 0) * i });      // st：小球一颗颗落上去的错峰（S4 堆叠）
+    }
+    return pushStruct(screen, { kind:'cloud', els: els, cx:cx, cy:cy, start:start });
+  }
+  function svgBox(screen, x, y, w, h, viewBox, inner, start, kind) {
+    var box = mk('div', 'icon', { left:x + 'px', top:y + 'px', width:w + 'px', height:h + 'px' });
+    var ns = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', viewBox);
+    svg.setAttribute('width', String(w)); svg.setAttribute('height', String(h));
+    svg.innerHTML = inner;
+    box.appendChild(svg);
+    return pushStruct(screen, { el: box, start: start, kind: kind || 'fade' });
+  }
+
+  /* ---------- S3 对照实验：左阵列（自选）/ 右阵列（机选）/ 中间对比轴线（从底部向上拉伸）/ 两个悬浮气泡 ---------- */
+  screenNodes[2].structs.push({ kind:'cluster', item:'lclu', sel:2, els: ballRing(6, rSize(40), 'mball-gold', rSize(98), 0.35, 'lclu') });
+  screenNodes[2].structs.push({ kind:'cluster', item:'rclu', sel:2, els: ballRing(6, rSize(40), 'mball-gray', rSize(98), 0.35, 'rclu') });
+  /* 轴线：x 居中，从 y=0.86 向上长到 y=0.22（transform-origin 在底部） */
+  var axis = mk('div', 'vaxis', { left:(rx(0.5) - rSize(1)) + 'px', top:ry(0.220) + 'px', width:rSize(2) + 'px',
+                                  height:(ry(0.860) - ry(0.220)) + 'px' });
+  pushStruct(2, { el: axis, kind:'axisUp', start: S3_T.axis });
+  var vs = mk('div', 'vs', { left:(rx(0.5) - rSize(24)) + 'px', top:(ry(0.500) - rSize(30)) + 'px' });
+  vs.textContent = 'VS';
+  pushStruct(2, { el: vs, kind:'fade', start: S3_T.axis + 0.9 });
+  /* 两个悬浮气泡：飘在两组球下方（左大右小，读数差一眼可见） */
+  bubble(rx(0.160), ry(0.780), rSize(196), S3_T.bubL, 'bubble-gold');
+  bubble(rx(0.840), ry(0.790), rSize(140), S3_T.bubR, 'bubble-gray');
+
+  /* ---------- S4 量化数据：左 8 金球（一颗颗堆叠）/ 右 2 灰球 / 两根对比柱（左柱高 4×） ---------- */
+  cloud(3, rx(0.155), ry(0.360), 8, rSize(82), rSize(34), 'mball-gold', S4_T.stack, 0.2, null, 0.55);
+  cloud(3, rx(0.835), ry(0.680), 2, rSize(44), rSize(34), 'mball-gray', S4_T.cluR, 1.1);
+  bar(rx(0.135), ry(0.885), rSize(46), rSize(475), S4_T.bars - 1.8, 'vbar-gold');
+  bar(rx(0.815), ry(0.885), rSize(46), rSize(118), S4_T.bars - 1.8, 'vbar-gray');
+
+  /* ---------- S5 三案例：篮球（弹起）/ 骰子（落下）/ K 线（逐根生长） ---------- */
+  svgBox(4, rx(0.22) - rSize(70), ry(0.45) - rSize(70), rSize(140), rSize(140), '0 0 96 96',
+    '<circle class="stroke" cx="48" cy="48" r="34"/>' +
+    '<path class="stroke" d="M 14 48 C 34 34 62 34 82 48"/>' +
+    '<path class="stroke" d="M 48 14 C 34 34 34 62 48 82"/>' +
+    '<path class="stroke" d="M 23 24 C 39 36 57 36 73 24"/>', S5_T.ballIn, 'bounceIn');
+  svgBox(4, rx(0.50) - rSize(62), ry(0.45) - rSize(62), rSize(124), rSize(124), '0 0 96 96',
+    '<rect class="stroke" x="16" y="16" width="64" height="64" rx="12"/>' +
+    '<circle class="gold" cx="34" cy="34" r="5"/><circle class="gold" cx="62" cy="34" r="5"/>' +
+    '<circle class="gold" cx="48" cy="48" r="5"/><circle class="gold" cx="34" cy="62" r="5"/>' +
+    '<circle class="gold" cx="62" cy="62" r="5"/>', S5_T.diceIn, 'dropIn');
+  svgBox(4, rx(0.78) - rSize(78), ry(0.45) - rSize(70), rSize(156), rSize(140), '0 0 120 96',
+    '<path class="stroke kline" d="M 18 22 L 18 78"/><path class="stroke kline" d="M 44 14 L 44 70"/>' +
+    '<path class="stroke kline" d="M 70 26 L 70 82"/><path class="stroke kline" d="M 96 34 L 96 88"/>' +
+    '<path class="stroke kline" d="M 8 66 L 32 46 L 58 58 L 84 30 L 112 40"/>', S5_T.kline, 'klineGrow');
+
+  /* ---------- S6 大脑轮廓（描边生长）+ 4 个呼吸光点 ---------- */
+  var BRAIN_W = rx(0.28), BRAIN_H = Math.round(rx(0.28) * 520 / 600);
+  var brain = mk('div', 'brainWrap', { left:(rx(0.38) - BRAIN_W / 2) + 'px', top:(ry(0.46) - BRAIN_H / 2) + 'px',
+                                       width:BRAIN_W + 'px', height:BRAIN_H + 'px' });
+  var brainSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  brainSvg.setAttribute('viewBox', '0 0 600 520');
+  brainSvg.setAttribute('width', String(BRAIN_W)); brainSvg.setAttribute('height', String(BRAIN_H));
+  brainSvg.innerHTML =
+    '<path d="M 300 60 C 214 36 140 84 128 148 C 84 178 74 240 100 282 C 74 324 90 388 138 414 ' +
+    'C 154 462 212 490 270 478 C 282 488 296 488 300 480 C 304 488 318 488 330 478 ' +
+    'C 388 490 446 462 462 414 C 510 388 526 324 500 282 C 526 240 516 178 472 148 ' +
+    'C 460 84 386 36 300 60 Z"/>' +
+    '<path d="M 300 62 C 296 200 296 340 300 480"/>' +
+    '<path d="M 176 176 C 214 200 214 232 186 254" />' +
+    '<path d="M 424 176 C 386 200 386 232 414 254" />' +
+    '<path d="M 150 320 C 196 332 206 366 178 390" />' +
+    '<path d="M 450 320 C 404 332 394 366 422 390" />';
+  brain.appendChild(brainSvg);
+  var brainPaths = [].slice.call(brainSvg.querySelectorAll('path'));
+  brainPaths.forEach(function (pth) {
+    var len = pth.getTotalLength();
+    pth.__len = len;
+    pth.style.strokeDasharray = len;
+    pth.style.strokeDashoffset = len;
+  });
+  pushStruct(5, { el: brain, kind:'brainDraw', paths: brainPaths, start: S6_T.brain, dur: S6_T.brainDur });
+  ['dot1', 'dot2', 'dot3', 'dot4'].forEach(function (it, i) {
+    pushStruct(5, { kind:'dotPulse', item: it, i: i,
+      el: mk('div', 'brainDot', { left:0, top:0, width:rSize(16) + 'px', height:rSize(16) + 'px' }, ballsRoot) });
+  });
+
+  /* ---------- S7 收尾：四角粒子向心汇聚 → 水平线 → 金句 ---------- */
+  (function () {
+    var rnd = mulberry32(7777), els = [];
+    var corners = [[0.06, 0.10], [0.94, 0.10], [0.06, 0.90], [0.94, 0.90]];
+    for (var i = 0; i < 28; i++) {
+      var c = corners[i % 4];
+      var el = mk('div', 'pnote', { left:'0px', top:'0px', width:rSize(6) + 'px', height:rSize(6) + 'px' }, ballsRoot);
+      els.push({ el: el,
+                 x0: c[0] + (rnd() - 0.5) * 0.06, y0: c[1] + (rnd() - 0.5) * 0.06,
+                 x1: 0.5 + (rnd() - 0.5) * 0.86, y1: 0.630, d: 0.75 + rnd() * 0.9, ph: rnd() * 6.28 });
+    }
+    pushStruct(6, { kind:'converge', els: els, start: S7_T.parts, arrive: S7_T.line, dur: 6.6 });
+  })();
+  (function () {
+    var el = mk('div', 'quoteline', { left:rx(0.16) + 'px', top:ry(0.630) + 'px', width:rx(0.68) + 'px' });
+    pushStruct(6, { el: el, kind:'lineGrow', start: S7_T.line });
+  })();
+
+  /* ---------- S1 主角物品：一颗金球「7」（轮廓生长 → 数字写入 → 漂浮呼吸 + 微粒子） ---------- */
+  (function () {
+    var R = rSize(112);
+    var box = mk('div', 'icon b7', { left:(rx(ITEM_POS.ball7.x) - R) + 'px', top:(ry(ITEM_POS.ball7.y) - R) + 'px',
+                                     width:(R * 2) + 'px', height:(R * 2) + 'px' }, ballsRoot);
+    var ns = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 200 200');
+    svg.setAttribute('width', String(R * 2)); svg.setAttribute('height', String(R * 2));
+    svg.innerHTML =
+      '<circle class="b7ring" cx="100" cy="100" r="92"/>' +
+      '<path class="b7hot" d="M 32 62 A 78 78 0 0 1 88 22"/>' +
+      '<text class="b7num" x="100" y="100">7</text>';
+    box.appendChild(svg);
+    var ring = svg.querySelector('.b7ring'), num = svg.querySelector('.b7num');
+    var rlen = ring.getTotalLength();
+    ring.style.strokeDasharray = rlen; ring.style.strokeDashoffset = rlen;
+    pushStruct(0, { kind:'ballGrow', el: box, ring: ring, num: num, rlen: rlen,
+                    item:'ball7', start: S1_T.ball, dur: S1_T.growDur, digit: S1_T.digit });
+    /* 镜面虚影：球体下方的一层倒影（暗示“假象”），2.0s 后淡入，随球一起漂浮呼吸 */
+    var ghost = mk('div', 'b7ghost', { left:(rx(ITEM_POS.ball7.x) - R) + 'px', top:(ry(ITEM_POS.ball7.y) - R) + 'px',
+                                       width:(R * 2) + 'px', height:(R * 2) + 'px' }, ballsRoot);
+    var gsvg = svg.cloneNode(true);
+    gsvg.querySelector('.b7ring').style.strokeDashoffset = 0;
+    ghost.appendChild(gsvg);
+    pushStruct(0, { kind:'ghost', el: ghost, start: S1_T.ghost });
+    var sparks = [];
+    for (var i = 0; i < 3; i++) {
+      sparks.push({ el: mk('div', 'ring-dot', { left:'0px', top:'0px', width:rSize(9) + 'px', height:rSize(9) + 'px' }, ballsRoot),
+                    a: i * 2.1, ph: i * 1.3, r: R * 1.05 });
+    }
+    pushStruct(0, { kind:'spark', els: sparks, item:'ball7', start: 1.6 });
+  })();
+
+  /* ============================================================
+     三 · 背景引擎（粒子 / 射线 / 概率曲线 / 棕金光晕 / 颗粒）
+     ============================================================ */
+  var bg = document.getElementById('bg');
+  var bgCtx = bg.getContext('2d');
+  var RAY_ORIGIN = { x:rx(0.73), y:ry(0.42) };   // 背景射线的放射原点（注意：不是 S2 的 RING 母题）
+  var PARTICLES = (function () {
+    var rnd = mulberry32(20261008), arr = [];
+    for (var i = 0; i < 76; i++) {
+      var d = rnd(), gold = rnd() < 0.24;
+      arr.push({
+        x0:rnd(), y0:rnd(),
+        vx:0.0012 + rnd() * 0.0034, vy:-(0.0010 + rnd() * 0.0032),
+        d:d, ph:rnd() * Math.PI * 2,
+        wf:0.08 + rnd() * 0.20, tw:0.18 + rnd() * 0.42,
+        c: gold ? '215,185,121' : '245,241,232', boost: gold ? 1.25 : 1.0
+      });
+    }
+    return arr;
+  })();
+  var BLOBS = [
+    { c:'107,74,26',   a:0.085, r:820,  x:0.775, y:0.365, sx:0.022, sy:0.017, ph:0.4 },
+    { c:'184,148,74',  a:0.045, r:1080, x:0.20,  y:0.80,  sx:0.018, sy:0.022, ph:2.2 },
+    { c:'245,241,232', a:0.022, r:700,  x:0.50,  y:0.98,  sx:0.015, sy:0.012, ph:3.6 }
+  ];
+  /* ---------- ② 局部粒子：只在图形区域（圆环带 / 金球簇）生成与消散，不铺满全屏 ---------- */
+  var MOTES = (function () {
+    var rnd = mulberry32(90210), arr = [];
+    for (var i = 0; i < 44; i++) {
+      arr.push({
+        zone:'ring', a:rnd() * 6.2832, r:rSize(196) + rnd() * rSize(236),
+        sp:(rnd() < 0.5 ? -1 : 1) * (0.05 + rnd() * 0.09),
+        ph:rnd() * 6.2832, wob:rSize(6) + rnd() * rSize(22), wf:0.07 + rnd() * 0.17,
+        sz:(0.9 + rnd() * 2.0) * kH(), tw:0.10 + rnd() * 0.20, d:rnd(),
+        c: rnd() < 0.74 ? '215,185,121' : '245,241,232'
+      });
+    }
+    for (var j = 0; j < 14; j++) {
+      arr.push({
+        zone:'gold', a:rnd() * 6.2832, r:rSize(26) + rnd() * rSize(92),
+        sp:(rnd() < 0.5 ? -1 : 1) * (0.06 + rnd() * 0.12),
+        ph:rnd() * 6.2832, wob:rSize(5) + rnd() * rSize(16), wf:0.09 + rnd() * 0.18,
+        sz:(0.8 + rnd() * 1.8) * kH(), tw:0.12 + rnd() * 0.22, d:rnd(),
+        c:'215,185,121'
+      });
+    }
+    return arr;
+  })();
+  /* ② 漫游扫光：一束柔和的低饱和金棕光带 + 一个更小的光核（落点明确） */
+  function drawSweep(t, g, k, L) {
+    if (k <= 0.01) return;
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    g.translate(L.x, L.y);
+    g.rotate(L.ang);
+    g.scale(1, 0.44);                     // 拉长成“光带”，沿运动方向扫过画面
+    var gr = g.createRadialGradient(0, 0, 0, 0, 0, rSize(920));
+    gr.addColorStop(0, 'rgba(255,238,196,' + (0.070 * k).toFixed(4) + ')');
+    gr.addColorStop(0.34, 'rgba(215,185,121,' + (0.036 * k).toFixed(4) + ')');
+    gr.addColorStop(1, 'rgba(107,74,26,0)');
+    g.fillStyle = gr;
+    g.beginPath(); g.arc(0, 0, rSize(920), 0, Math.PI * 2); g.fill();
+    g.restore();
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    var cg = g.createRadialGradient(L.x, L.y, 0, L.x, L.y, rSize(430));
+    cg.addColorStop(0, 'rgba(255,244,214,' + (0.055 * k).toFixed(4) + ')');
+    cg.addColorStop(0.5, 'rgba(215,185,121,' + (0.022 * k).toFixed(4) + ')');
+    cg.addColorStop(1, 'rgba(107,74,26,0)');
+    g.fillStyle = cg;
+    g.beginPath(); g.arc(L.x, L.y, rSize(430), 0, Math.PI * 2); g.fill();
+    g.restore();
+  }
+  function drawMotes(t, g, k, L) {
+    if (k <= 0.01) return;
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    for (var i = 0; i < MOTES.length; i++) {
+      var m = MOTES[i];
+      var cx = (m.zone === 'ring') ? RING_S2.cx : ITEMS.gold.cx + ITEMS.gold.dx;
+      var cy = (m.zone === 'ring') ? RING_S2.cy : ITEMS.gold.cy + ITEMS.gold.dy;
+      var rr = m.r + Math.sin(t * m.wf + m.ph) * m.wob;
+      var a = m.a + t * m.sp;
+      var x = cx + Math.cos(a) * rr;
+      var y = cy + Math.sin(a) * rr * 0.97;
+      var life = smoothstep((t - (RING_S2.text0 + (i % 19) * 0.19)) / 1.6);
+      if (life <= 0.01) continue;
+      var tw = 0.5 + 0.5 * Math.sin(t * m.tw + m.ph * 1.7);
+      var dx = x - L.x, dy = y - L.y;
+      var boost = 0.65 + 0.60 * clamp01((rSize(720) - Math.sqrt(dx * dx + dy * dy)) / rSize(720));
+      var al = Math.min(0.19, (0.045 + 0.115 * m.d) * (0.45 + 0.55 * tw) * boost) * life * k;
+      g.fillStyle = 'rgba(' + m.c + ',' + al.toFixed(4) + ')';
+      g.beginPath(); g.arc(x, y, m.sz, 0, Math.PI * 2); g.fill();
+    }
+    g.restore();
+  }
+  function drawRays(t, g, k){
+    if (k <= 0.01) return;
+    var n = 14, base = t * 0.25;
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    for (var i = 0; i < n; i++) {
+      var ang = base + i * (Math.PI * 2 / n) + Math.sin(t * 0.06 + i) * 0.012;
+      var len = rSize(1250) + rSize(260) * Math.sin(t * 0.05 + i * 1.7);
+      var x2 = RAY_ORIGIN.x + Math.cos(ang) * len, y2 = RAY_ORIGIN.y + Math.sin(ang) * len;
+      var gr = g.createLinearGradient(RAY_ORIGIN.x, RAY_ORIGIN.y, x2, y2);
+      gr.addColorStop(0, 'rgba(215,185,121,' + (0.055 * k).toFixed(4) + ')');
+      gr.addColorStop(0.45, 'rgba(184,148,74,' + (0.030 * k).toFixed(4) + ')');
+      gr.addColorStop(1, 'rgba(107,74,26,0)');
+      g.strokeStyle = gr; g.lineWidth = 1.4;
+      g.beginPath(); g.moveTo(RAY_ORIGIN.x, RAY_ORIGIN.y); g.lineTo(x2, y2); g.stroke();
+    }
+    g.restore();
+  }
+  function drawCurve(t, g, k){
+    if (k <= 0.01) return;
+    var baseY = ry(0.88), amp = rSize(190), cx = rx(0.5), sigma = rSize(210);
+    var x0 = rx(0.07), x1 = rx(0.93), span = x1 - x0;
+    var grow = smoothstep((t - 3.0) / 2.2);
+    if (grow <= 0.001) return;
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    g.strokeStyle = 'rgba(138,118,85,' + (0.22 * k * grow).toFixed(4) + ')';
+    g.lineWidth = 1;
+    g.beginPath();
+    var first = true;
+    for (var x = x0; x <= x1; x += 4) {
+      var y = baseY - grow * amp * Math.exp(-Math.pow(x - cx, 2) / (2 * sigma * sigma));
+      if (first) { g.moveTo(x, y); first = false; } else { g.lineTo(x, y); }
+    }
+    g.stroke();
+    g.strokeStyle = 'rgba(138,118,85,' + (0.16 * k * grow).toFixed(4) + ')';
+    g.beginPath(); g.moveTo(x0, baseY); g.lineTo(x1, baseY); g.stroke();
+    for (var j = 0; j <= 8; j++) {
+      var tx = x0 + j * (span / 8);
+      g.beginPath(); g.moveTo(tx, baseY); g.lineTo(tx, baseY + rSize(8)); g.stroke();
+    }
+    g.restore();
+  }
+  function drawBackground(t, cfg){
+    var g = bgCtx;
+    g.clearRect(0, 0, W, H);
+    /* 背景极缓慢的明暗呼吸（深黑底不是死黑） */
+    var breath = 1 + 0.22 * Math.sin(t * 2 * Math.PI / 38);
+    g.globalCompositeOperation = 'lighter';
+    for (var b = 0; b < BLOBS.length; b++) {
+      var B = BLOBS[b];
+      var a = B.a * (b === 0 ? cfg.glow : 1) * breath;
+      if (a <= 0.001) continue;
+      var cx = W * (B.x + Math.sin(t * B.sx + B.ph) * 0.040);
+      var cy = H * (B.y + Math.cos(t * B.sy + B.ph) * 0.032);
+      var rr = rSize(B.r) * (1 + 0.06 * Math.sin(t * 0.06 + B.ph));
+      var gr = g.createRadialGradient(cx, cy, 0, cx, cy, rr);
+      gr.addColorStop(0, 'rgba(' + B.c + ',' + a.toFixed(4) + ')');
+      gr.addColorStop(0.55, 'rgba(' + B.c + ',' + (a * 0.32).toFixed(4) + ')');
+      gr.addColorStop(1, 'rgba(' + B.c + ',0)');
+      g.fillStyle = gr;
+      g.beginPath(); g.arc(cx, cy, rr, 0, Math.PI * 2); g.fill();
+    }
+    drawSweep(t, g, cfg.sweep, cfg.light);
+    drawRays(t, g, cfg.rays);
+    drawCurve(t, g, cfg.curve);
+    g.globalCompositeOperation = 'source-over';
+    var amb = cfg.ambient;
+    for (var i = 0; i < PARTICLES.length; i++) {
+      var p = PARTICLES[i];
+      var x = ((p.x0 + p.vx * t) % 1 + 1) % 1 * W;
+      var y = ((p.y0 + p.vy * t) % 1 + 1) % 1 * H;
+      x += Math.sin(t * p.wf + p.ph) * (7 + 20 * p.d);
+      y += Math.cos(t * p.wf * 0.8 + p.ph) * (5 + 14 * p.d);
+      var tw = 0.55 + 0.45 * Math.sin(t * p.tw + p.ph * 1.7);
+      var alpha = Math.min(0.17, (0.030 + 0.115 * p.d) * tw * p.boost) * amb;
+      g.fillStyle = 'rgba(' + p.c + ',' + alpha.toFixed(4) + ')';
+      g.beginPath(); g.arc(x, y, 0.9 + 2.1 * p.d, 0, Math.PI * 2); g.fill();
+    }
+    drawMotes(t, g, cfg.motes, cfg.light);
+  }
+  var grain = document.getElementById('grain');
+  var grainCtx = grain.getContext('2d');
+  var TILE = 512;
+  var tile = (function () {
+    var c = document.createElement('canvas');
+    c.width = c.height = TILE;
+    var ctx = c.getContext('2d');
+    var img = ctx.createImageData(TILE, TILE);
+    var rnd = mulberry32(424242), d = img.data;
+    for (var i = 0; i < d.length; i += 4) {
+      var v = 122 + (rnd() - 0.5) * 140;
+      d[i] = d[i+1] = d[i+2] = v; d[i+3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    return c;
+  })();
+  function drawGrain(t){
+    var g = grainCtx;
+    g.clearRect(0, 0, W, H);
+    var gf = Math.floor(t * 12);
+    var rnd = mulberry32(gf * 7919 + 13);
+    var ox = -Math.floor(rnd() * TILE), oy = -Math.floor(rnd() * TILE);
+    for (var y = oy; y < H; y += TILE)
+      for (var x = ox; x < W; x += TILE) g.drawImage(tile, x, y);
+  }
+
+  /* ============================================================
+     四 · 渲染一帧
+     ============================================================ */
+  function screenVis(i, t){
+    var s = SCREENS[i];
+    var visIn = smoothstep((t - s.t0) / (i === 0 ? STAGE_IN : 0.85));
+    var visOut = (i === SCREENS.length - 1) ? 1 : smoothstep((s.t1 - t) / OUT_LEAD);
+    return Math.min(visIn, visOut);
+  }
+
+  function renderPiece(rec, t, vis, L, upg){
+    var p = rec.p, el = rec.el;
+    var prog = clamp01((t - p.start) / PIECE_FADE);
+    var e = easeOutCubic(prog);
+    var rise = (1 - e) * rSize(14);                       // 入场位移与悬浮漂移都随画幅缩放
+    var floatY = Math.sin((t - p.start) * 2 * Math.PI / FLOAT_PERIOD + rec.phase) * rSize(6) * e;
+    var floatX = 0;
+    /* ④ 附着层 · 标签吸附：标签不再有自己的悬浮相位，位移 = 所属物品的位移（逐帧同源） */
+    var it = p.attach ? ITEMS[p.attach.item] : null;
+    var itemLight = 1;
+    if (it) {
+      floatX = it.dx;
+      floatY = it.dy;                     // 叠加在标准入场位移 rise 之上：物品微动 + 入场位移
+      itemLight = it.light * it.on;
+    }
+    var scale = 1;
+    if (p.pop) {
+      var pp = clamp01((t - p.start) / 0.90);
+      if (pp < 0.60) scale = 1.00 + 0.02 * easeOutCubic(pp / 0.60);
+      else scale = 1.02 - 0.02 * ((pp - 0.60) / 0.40);
+    }
+    if (it && p.attach.followScale) scale *= it.k;      // 物品收紧 / 张开时，标签同步轻微缩放
+    var breathe = 1;
+    if (p.breathe) {
+      var on = smoothstep((t - (p.start + 1.0)) / 1.2);
+      breathe = 1 - on * 0.04 * (0.5 - 0.5 * Math.sin((t - p.start) * 2 * Math.PI / BREATHE_PERIOD));
+    }
+    /* 模块 A · 次层级（斜排正文 / 竖排注释）：基础透明度呼吸，不抢主视觉 */
+    var opB = 1;
+    if (p.opBreathe) {
+      var onB = smoothstep((t - (p.start + 1.0)) / 1.2);
+      opB = 1 - onB * 0.06 * (0.5 - 0.5 * Math.sin((t - p.start) * 2 * Math.PI / 9));
+    }
+    /* ② 光影层：光落到哪个元素，哪个元素提亮，其余压暗（金属字不吃暗） */
+    var lf = 1;
+    var lfOwn = 1;
+    if (upg && !p.metal) {
+      if (!rec.cx) {
+        rec.cx = p.x + el.offsetWidth / 2;
+        rec.cy = p.y + el.offsetHeight / 2 + (p.rot ? -el.offsetHeight / 4 : 0);
+      }
+      lfOwn = lightFactor(rec.cx, rec.cy, L);
+      lf = lfOwn;
+    }
+    /* ④ LightLink · 扫光联动：光扫到物品，贴在它身上的文字一起亮；
+       物品沉入暗部，文字跟着一起压暗（取「自身光照」与「所属物品光照」里更亮的那个，
+       所以标签既会随物品被点亮，也能在光直接扫过它时独立提亮）。 */
+    if (upg && it && p.attach.followAlpha) {
+      var A = p.attach;
+      var reach = Math.max(lfOwn, itemLight);
+      lf = (A.opMin + (A.opMax - A.opMin) * clamp01((reach - 0.74) / 0.26)) * it.on;
+    } else if (upg && it) {
+      lf *= clamp01((itemLight - 0.74) / 0.26) * 0.4 + 0.6;
+    }
+    /* 收尾屏：金句是片子的落点，不参与扫光压暗（整屏压暗由 brightness 统一处理） */
+    if (p.s === SCREENS.length - 1) lf = Math.max(lf, 0.94);
+    /* ③ 图形先衰减、文字随后收束（准备切页） */
+    /* ③ 图形先衰减、文字随后收束（末屏不淡出：片子停在金句上） */
+    var dec = (UPGRADED[p.s] && p.s !== SCREENS.length - 1)
+      ? (1 - 0.55 * smoothstep((t - (SCREENS[p.s].t1 -
+          Math.min(1.6, (SCREENS[p.s].t1 - SCREENS[p.s].t0) * 0.28))) / 1.2)) : 1;
+    el.style.opacity = (e * vis * breathe * opB * lf * dec).toFixed(3);
+    /* 验收量测：把本帧的实际明暗因子挂到 DOM 上（tools/attach-check.mjs 读它比对扫光联动） */
+    el.setAttribute('data-lf', lf.toFixed(3));
+    var tf = 'translate(' + Math.round(floatX) + 'px,' + Math.round(rise + floatY) + 'px)';
+    if (p.rot) { el.style.transformOrigin = '0% 0%'; tf += ' rotate(' + p.rot + 'deg)'; }
+    el.style.transform = tf + ' scale(' + scale.toFixed(4) + ')';
+    var blur = prog >= 1 ? '' : 'blur(' + ((1 - e) * 5).toFixed(2) + 'px)';
+    var glow = p.glow ? 'drop-shadow(0 8px 30px rgba(107,74,26,.42))' : '';
+    if (upg && !p.metal && lf > 0) glow += ' brightness(' + (0.94 + 0.10 * (lf - 0.74) / 0.26).toFixed(3) + ')';
+    el.style.filter = (blur + ' ' + glow).trim() || 'none';
+    /* ② 金属字：高光斜面随光源缓慢滑动，而不是固定渐变 */
+    if (p.metal) el.style.backgroundPosition = '0% ' + metalPos(t, rec, L) + '%';
+  }
+
+  /* 圆环自转相位（生长完成后才起转，避免“一边画一边转”的黏滞感） */
+  function ringSpinPhase(t) {
+    return RING_S2.spin * Math.max(0, t - RING_S2.spin0) * smoothstep((t - RING_S2.spin0) / 2.4);
+  }
+  function renderStruct(rec, t, vis, L){
+    var el = rec.el, k = rec.kind, i, B, it;
+    var dec = decayAt(t, rec.sel);
+    var lfOf = function (cx, cy) { return clamp01((lightFactor(cx, cy, L) - 0.74) / 0.26); };
+    if (k === 'fade') {
+      el.style.opacity = (clamp01((t - rec.start) / 0.85) * vis * dec).toFixed(3);
+    } else if (k === 'ringDraw') {
+      var grow = smoothstep((t - RING_S2.draw0) / RING_S2.drawDur);
+      el.style.opacity = (vis * dec).toFixed(3);
+      var line = el.querySelector('.ring-line');
+      line.setAttribute('stroke-dashoffset', (RING_S2_C * (1 - grow)).toFixed(1));
+      /* 轮廓线呼吸粗细：线条本身就是“活的” */
+      line.setAttribute('stroke-width',
+        ((1.5 + 0.35 * Math.sin((t - RING_S2.draw0) * 2 * Math.PI / 7.5)) * kH()).toFixed(2));
+      el.querySelector('.ring-inner').style.opacity = (0.75 * smoothstep((grow - 0.55) / 0.45)).toFixed(3);
+      /* 光扫到哪里，圆环哪一段就亮起来 */
+      var hot = el.querySelector('.ring-hot');
+      var hx = L.x - RING_S2.cx, hy = L.y - RING_S2.cy;
+      var ha = 0.55 * Math.pow(clamp01((rSize(980) - Math.sqrt(hx * hx + hy * hy)) / rSize(980)), 1.6) * grow;
+      var th = Math.atan2(hy, hx) * 180 / Math.PI;
+      hot.setAttribute('stroke', 'rgba(215,185,121,' + ha.toFixed(3) + ')');
+      hot.setAttribute('stroke-dashoffset', (-(th + 90) / 360 * RING_S2_C).toFixed(1));
+      hot.style.opacity = dec.toFixed(3);
+    } else if (k === 'ringTextS2') {
+      /* 环绕路径文字：沿轮廓逐字排布 → 极慢自转（1.8°/s）→ 呼吸缩放 + 随光呼吸的透明度 */
+      var drawP = clamp01((t - RING_S2.text0) / RING_S2.textDur);
+      var spinP = ringSpinPhase(t);
+      var itR = ITEMS.ring;
+      for (i = 0; i < rec.spans.length; i++) {
+        var sp = rec.spans[i];
+        var on = smoothstep((drawP - (0.10 + (i / rec.spans.length) * 0.82)) / 0.10);
+        var aa = sp.angle + spinP;
+        var ard = aa * Math.PI / 180;
+        var sx = RING_S2.cx + Math.sin(ard) * rec.r, sy = RING_S2.cy - Math.cos(ard) * rec.r;
+        var lfC = lightFactor(sx, sy, L);
+        var brth = 1 + 0.045 * Math.sin((t - RING_S2.text0) * 2 * Math.PI / 7 + i * 0.42);
+        sp.el.style.transform = 'translate(-50%,-50%) rotate(' + aa.toFixed(2) + 'deg) translateY(-' +
+          rec.r + 'px) scale(' + (brth * itR.k).toFixed(3) + ')';
+        sp.el.style.opacity = (on * vis * dec * itR.on * (0.18 + 0.36 * (lfC - 0.74) / 0.26) *
+                              (0.80 + 0.20 * Math.sin(t * 0.34 + i * 0.30))).toFixed(3);
+      }
+    } else if (k === 'cluster') {
+      /* 球簇：位置 = 物品中心 + 极坐标 × 物品缩放 —— 与贴球标签同一份数据（聚拢 / 弥散） */
+      it = ITEMS[rec.item];
+      for (i = 0; i < rec.els.length; i++) {
+        B = rec.els[i];
+        var bob = rSize(4.5) * Math.sin((t - it.ev) * 2 * Math.PI / 2.8 + B.ph);
+        var gx = it.cx + it.dx + Math.cos(B.a) * B.r * it.k;
+        var gy = it.cy + it.dy + Math.sin(B.a) * B.r * it.k * 0.92 + bob;
+        B.el.style.transform = 'translate(' + Math.round(gx - B.size / 2) + 'px,' + Math.round(gy - B.size / 2) + 'px)';
+        B.el.style.opacity = (it.on * vis * dec * (0.30 + 0.62 * lfOf(gx, gy))).toFixed(3);
+      }
+    } else if (k === 'coreBall') {
+      /* 环心小金球：3s 周期呼吸脉动 */
+      it = ITEMS.ring;
+      var pu = 1 + 0.22 * (0.5 + 0.5 * Math.sin((t - S2_T.ring) * 2 * Math.PI / 3.0));
+      var ccx = rec.cx + it.dx, ccy = rec.cy + it.dy;
+      el.style.transform = 'translate(-50%,-50%) scale(' + pu.toFixed(3) + ')';
+      el.style.opacity = (it.on * vis * dec * (0.28 + 0.60 * lfOf(ccx, ccy))).toFixed(3);
+    } else if (k === 'cloud') {
+      for (i = 0; i < rec.els.length; i++) {
+        B = rec.els[i];
+        /* 错峰落球：每颗球有自己的出生时刻（S4 的「一颗颗堆叠」），未出生时完全不可见 */
+        var bornC = smoothstep((t - rec.start - (B.st || 0)) / 0.55);
+        if (bornC <= 0.001) { B.el.style.opacity = 0; continue; }
+        var drop = (1 - bornC) * rSize(70);                 // 从上方落下来
+        var cx2 = rec.cx + B.x + Math.sin(t * 0.21 + B.ph) * rSize(5);
+        var cy2 = rec.cy + B.y + Math.cos(t * 0.27 + B.ph * 1.3) * rSize(5) - drop;
+        B.el.style.transform = 'translate(' + Math.round(cx2 - rSize(17)) + 'px,' + Math.round(cy2 - rSize(17)) + 'px)';
+        B.el.style.opacity = (bornC * vis * dec * (0.30 + 0.62 * lfOf(cx2, cy2))).toFixed(3);
+      }
+    } else if (k === 'axisUp') {
+      /* 对比轴线：从底部向上拉伸 */
+      var aq = easeOutCubic(clamp01((t - rec.start) / 1.6));
+      el.style.transformOrigin = '50% 100%';
+      el.style.transform = 'scaleY(' + aq.toFixed(4) + ')';
+      el.style.opacity = (aq * vis * dec * (0.40 + 0.60 * lfOf(rec.el.offsetLeft, rec.el.offsetTop + el.offsetHeight / 2))).toFixed(3);
+    } else if (k === 'ghost') {
+      /* S1 镜面虚影：球下方的倒影（暗示“假象”），比球更暗、更虚 */
+      var it7 = ITEMS.ball7;
+      var gIn = smoothstep((t - rec.start) / 1.2);
+      el.style.transform = 'translate(' + it7.dx + 'px,' + (it7.dy + el.offsetHeight * 0.92) + 'px) scaleY(-1) scale(' + it7.k.toFixed(4) + ')';
+      el.style.opacity = (gIn * it7.on * vis * dec * 0.22).toFixed(3);
+    } else if (k === 'bubble') {
+      var bp = easeOutCubic(clamp01((t - rec.start) / 0.55));
+      el.style.transform = 'scale(' + (0.35 + 0.65 * bp).toFixed(4) + ')';
+      el.style.opacity = (bp * vis * dec * (0.42 + 0.58 * lfOf(rec.cx, rec.cy))).toFixed(3);
+    } else if (k === 'barGrow') {
+      var bq = easeOutCubic(clamp01((t - rec.start) / 1.0));
+      el.style.transform = 'scaleY(' + bq.toFixed(4) + ')';
+      var byc = el.offsetTop - el.offsetHeight / 2;
+      el.style.opacity = (bq * vis * dec * 0.92).toFixed(3);
+    } else if (k === 'lineGrow') {
+      var lq = easeOutCubic(clamp01((t - rec.start) / 1.2));
+      el.style.transform = 'scaleX(' + lq.toFixed(4) + ')';
+      el.style.opacity = (lq * vis * dec * 0.95).toFixed(3);
+    } else if (k === 'bounceIn') {
+      /* 篮球：从画面下方弹起 → 入网（落点）→ 轻微弹跳 */
+      var bp2 = clamp01((t - rec.start) / 1.8);
+      var dy = (1 - bp2) * (1 - bp2) * rSize(300) - Math.sin(bp2 * Math.PI) * rSize(50);
+      var set = bp2 >= 1 ? Math.sin((t - rec.start - 1.8) * 2 * Math.PI / 1.6) * rSize(6) : 0;
+      el.style.transform = 'translate(0,' + Math.round(dy + set) + 'px)';
+      el.style.opacity = (smoothstep((t - rec.start) / 0.5) * vis * dec).toFixed(3);
+    } else if (k === 'dropIn') {
+      /* 骰子：从上方落下 → 落地轻滚 → 点数由模糊到清晰 */
+      var dp = clamp01((t - rec.start) / 1.4);
+      var ddy = -(1 - easeOutCubic(dp)) * rSize(320);
+      var rot = (1 - easeOutCubic(dp)) * 22 + (dp >= 1 ? Math.sin((t - rec.start - 1.4) * 1.4) * 4 : 0);
+      el.style.transform = 'translate(0,' + Math.round(ddy) + 'px) rotate(' + rot.toFixed(2) + 'deg)';
+      var pipOn = smoothstep((t - rec.start - 0.7) / 0.9);
+      var pips = el.querySelectorAll('circle');
+      for (i = 0; i < pips.length; i++) pips[i].style.opacity = (0.25 + 0.75 * pipOn).toFixed(3);
+      el.style.opacity = (smoothstep((t - rec.start) / 0.5) * vis * dec).toFixed(3);
+    } else if (k === 'klineGrow') {
+      /* K 线：逐根从左到右生长，最后一根顶上闪一下 */
+      var paths = el.querySelectorAll('path.kline');
+      var kp0 = t - rec.start;
+      for (i = 0; i < paths.length; i++) {
+        var len = paths[i].__len || (paths[i].__len = paths[i].getTotalLength());
+        var pp = clamp01((kp0 - i * 0.30) / 0.70);
+        paths[i].style.strokeDasharray = len;
+        paths[i].style.strokeDashoffset = (len * (1 - pp)).toFixed(1);
+      }
+      el.style.opacity = (smoothstep((t - rec.start) / 0.4) * vis * dec).toFixed(3);
+    } else if (k === 'brainDraw') {
+      /* 大脑轮廓：逐笔描边生长（3s），画完随光呼吸 */
+      var bp3 = 1.6;
+      for (i = 0; i < rec.paths.length; i++) {
+        var gp = clamp01((t - rec.start - (i / rec.paths.length) * rec.dur) / (rec.dur / bp3));
+        rec.paths[i].style.strokeDashoffset = (rec.paths[i].__len * (1 - gp)).toFixed(1);
+      }
+      var drawn = smoothstep((t - rec.start) / (rec.dur * 0.9));
+      el.style.opacity = (drawn * vis * dec * (0.34 + 0.66 * lfOf(rx(0.38), ry(0.46)))).toFixed(3);
+    } else if (k === 'dotPulse') {
+      /* 光点：依次脉动；脉动时贴在它旁边的关键词一起亮（由 ITEMS 的 dx/dy/light 驱动） */
+      it = ITEMS[rec.item];
+      var act = smoothstep((t - it.ev) / 0.55);
+      var dpu = 1 + 0.55 * act * (0.5 + 0.5 * Math.sin((t - it.ev) * 2 * Math.PI / 1.8));
+      el.style.left = (it.cx + it.dx) + 'px';
+      el.style.top = (it.cy + it.dy) + 'px';
+      el.style.transform = 'translate(-50%,-50%) scale(' + (dpu * (0.7 + 0.3 * act)).toFixed(3) + ')';
+      el.style.opacity = (it.on * vis * dec * (0.30 + 0.70 * lfOf(it.cx + it.dx, it.cy + it.dy))).toFixed(3);
+    } else if (k === 'converge') {
+      /* 四角粒子向心汇聚 → 在金句下方汇成水平线（散沙归拢） */
+      for (i = 0; i < rec.els.length; i++) {
+        B = rec.els[i];
+        var cp = easeOutCubic(clamp01((t - rec.start - B.d * 0.9) / (rec.dur || 2.6)));
+        var px2 = (B.x0 + (B.x1 - B.x0) * cp) * W, py2 = (B.y0 + (B.y1 - B.y0) * cp) * H;
+        el = B.el;
+        el.style.transform = 'translate(' + Math.round(px2 - rSize(3)) + 'px,' + Math.round(py2 - rSize(3)) + 'px)';
+        el.style.opacity = (vis * (0.06 + 0.30 * Math.sin(Math.min(1, cp * 1.6) * Math.PI)) *
+                            (0.60 + 0.40 * Math.sin(t * 1.7 + B.ph)) * dec).toFixed(3);
+      }
+    } else if (k === 'ballGrow') {
+      /* S1 金球：轮廓 1.2s 生长 → 数字「7」写入 → 漂浮呼吸（位置/缩放由 ITEMS.ball7 驱动） */
+      it = ITEMS.ball7;
+      var gp2 = easeOutCubic(clamp01((t - rec.start) / rec.dur));
+      rec.ring.style.strokeDashoffset = (rec.rlen * (1 - gp2)).toFixed(1);
+      var nIn = smoothstep((t - rec.digit) / 0.9);
+      rec.num.style.opacity = nIn.toFixed(3);
+      rec.num.style.transformOrigin = '100px 100px';
+      rec.num.style.transform = 'scale(' + (0.82 + 0.18 * nIn).toFixed(3) + ')';
+      el.style.transform = 'translate(' + it.dx + 'px,' + it.dy + 'px) scale(' + it.k.toFixed(4) + ')';
+      el.style.opacity = (it.on * vis * dec).toFixed(3);
+    } else if (k === 'spark') {
+      /* 球周围偶尔飘出的金色微粒子：向外扩散后消散 */
+      it = ITEMS.ball7;
+      for (i = 0; i < rec.els.length; i++) {
+        B = rec.els[i];
+        var cyc = 4.2, sp2 = ((t - rec.start - B.ph * 0.9) % cyc + cyc) % cyc / cyc;
+        var rr2 = B.r + sp2 * rSize(64);
+        var aa2 = B.a + t * 0.42;
+        var qx = it.cx + it.dx + Math.cos(aa2) * rr2, qy = it.cy + it.dy + Math.sin(aa2) * rr2 * 0.92;
+        B.el.style.transform = 'translate(' + Math.round(qx - rSize(4.5)) + 'px,' + Math.round(qy - rSize(4.5)) + 'px)';
+        B.el.style.opacity = (it.on * vis * 0.42 * Math.sin(sp2 * Math.PI)).toFixed(3);
+      }
+    }
+  }
+
+  var capState = { i:-1 };
+  function render(t){
+    var L = lightAt(t);
+    updateItems(t, L);          // ④ 附着层：先把物品这一帧的位置 / 缩放 / 光照算出来，文字再跟着走
+    var cfg = { rays:0, curve:0, glow:0, sweep:1.0, motes:0, ambient:1, light:L };
+    var upg = 0;
+    for (var i = 0; i < SCREENS.length; i++) {
+      var vis = screenVis(i, t);
+      var w = (i === SCREENS.length - 1) ? Math.max(vis, t >= 149.9 ? 1 : 0) : vis;
+      if (w > 0) {
+        cfg.rays += SCREENS[i].bg.rays * w;
+        cfg.curve += SCREENS[i].bg.curve * w;
+        cfg.glow += SCREENS[i].bg.glow * w;
+        if (UPGRADED[i]) upg = Math.max(upg, w);
+      }
+      var on = UPGRADED[i] ? 1 : 0;
+      for (var a = 0; a < screenTextNodes[i].length; a++) renderPiece(screenTextNodes[i][a], t, vis, L, on);
+      for (var b = 0; b < screenNodes[i].structs.length; b++) renderStruct(screenNodes[i].structs[b], t, vis, L);
+    }
+    /* 叙述改造屏：全屏粒子让位给图形局部粒子（不铺满全屏） */
+    cfg.motes = upg;
+    cfg.ambient = 1 - 0.62 * upg;
+    drawBackground(t, cfg);
+    drawGrain(t);
+
+    kickerEl.style.opacity = (0.95 * smoothstep((t - 0.5) / 1.6)).toFixed(3);
+    var cur = 0;
+    for (var c = 0; c < SCREENS.length; c++) if (t >= SCREENS[c].t0) cur = c;
+    if (t >= TOTAL) cur = SCREENS.length - 1;
+    if (capState.i !== cur) {
+      capNote.textContent = SCREENS[cur].note;
+      capIdx.textContent = ('0' + (cur + 1)).slice(-2) + ' / 0' + SCREENS.length;
+      capState.i = cur;
+    }
+    captionEl.style.opacity = (Math.max(screenVis(cur, t), t >= TOTAL - 0.01 ? 1 : 0) * 0.95).toFixed(3);
+    progressBar.style.width = (clamp01(t / TOTAL) * 100).toFixed(3) + '%';
+    /* S7 收尾：最后 5s 整屏亮度缓慢下降（文字不淡出，靠整屏压暗做结尾呼吸感） */
+    var dimF = 1 - 0.20 * smoothstep((t - S7_T.dim) / Math.max(0.001, TOTAL - S7_T.dim));
+    stageEl.style.filter = dimF > 0.999 ? '' : 'brightness(' + dimF.toFixed(4) + ')';
+    if (debugEl.style.display === 'block') {
+      var s2 = SCREENS[cur];
+      debugEl.textContent = s2.label + '  t=' + t.toFixed(2) + 's / ' + TOTAL + 's';
+    }
+  }
+
+  /* ============================================================
+     五 · 播放控制
+     ============================================================ */
+  var staticFrame = params.get('t') !== null && params.get('t') !== '';
+  var rate = parseFloat(params.get('rate') || '1');
+  if (!isFinite(rate) || rate <= 0) rate = 1;
+  /* ?start=9 从第 9 秒开始播（便于只看某一屏；不影响任何时序常量） */
+  var startAt = parseFloat(params.get('start') || '0');
+  if (!isFinite(startAt) || startAt < 0) startAt = 0;
+  startAt = Math.min(startAt, TOTAL);
+  var curT = startAt, playing = !staticFrame, t0ms = null;
+  window.__seek = function (sec) {
+    playing = false; staticFrame = true;
+    curT = Math.max(0, Math.min(TOTAL, sec));
+    render(curT);
+  };
+  window.__state = function () { return { t: curT, playing: playing, total: TOTAL, w: W, h: H }; };
+  /* 画幅量测钩子：所有体检脚本都从这里取画布与安全框，切 16:9 / 2K 不用改脚本 */
+  window.__canvas = function () {
+    return { w: W, h: H, aspect: +(W / H).toFixed(4), safe: SAFE,
+             safeRatio: { left: 0.05, right: 0.95, top: 0.05, bottom: 0.05 },
+             scale: { kH: kH(), rFont160: rFont(160), rSize64: rSize(64) } };
+  };
+  /* v3.2 叙述层量测钩子（供 tools/narrative.mjs 验收：光源位置 / 环生长 / 球簇状态） */
+  window.__light = function () {
+    var L = lightAt(curT);
+    /* 返回未取整的坐标：验收脚本要算「漫游速度」，取整会把 1px/0.1s 的缓慢移动抹成 0 */
+    return { t: +curT.toFixed(3), x: +L.x.toFixed(2), y: +L.y.toFixed(2), r: LIGHT_R };
+  };
+  /* 音效层量测钩子（供 tools/audio-render.mjs 离线混音与 §6.3 验收） */
+  window.__audioEvents = function () { return { screen: 2, events: SFX_EVENTS, defs: SFX_DEF,
+    maxConcurrent: SFX_MAX_CONCURRENT, sfxOn: SFX.on, bgm: SFX.bgm ? SFX.bgm.src : null,
+    bgmVol: parseFloat(params.get('bgmvol') || '-18') }; };
+  window.__audioLog = function () { return SFX.log.slice(); };
+  window.__audioStatus = function () {
+    var ready = [];
+    for (var k in SFX_DEF) if (Object.prototype.hasOwnProperty.call(SFX_DEF, k)) {
+      ready.push(k + ':' + (SFX.buf[k] ? 'buffer' : (SFX.el[k] ? 'element' : 'missing')));
+    }
+    return { on: SFX.on, ctx: SFX.ctx ? SFX.ctx.state : 'none', sounds: ready, played: SFX.log.length };
+  };
+  window.__audioEnable = function () { audioEnable(); return window.__audioStatus(); };
+  window.__narrative = function () {
+    var svg = document.getElementById('ringS2');
+    var dots = [].map.call(document.querySelectorAll('.ring-dot'), function (d) { return +d.style.opacity || 0; });
+    var chars = [].map.call(document.querySelectorAll('.ringtext span'), function (s) { return +s.style.opacity || 0; });
+    return {
+      t: +curT.toFixed(3),
+      ring: { op: +(svg ? svg.style.opacity : 0) || 0,
+              dash: svg ? parseFloat(svg.querySelector('.ring-line').getAttribute('stroke-dashoffset')) : -1,
+              circ: RING_S2_C, r: RING_S2.r,
+              width: svg ? parseFloat(svg.querySelector('.ring-line').getAttribute('stroke-width')) : 0,
+              hot: svg ? svg.querySelector('.ring-hot').getAttribute('stroke') : '' },
+      dots: dots, chars: chars,
+      balls: [].map.call(document.querySelectorAll('.mball'), function (b) {
+        return { tf: b.style.transform, op: +b.style.opacity || 0, gold: b.classList.contains('mball-gold') };
+      }),
+      gold: ITEMS.gold, gray: ITEMS.gray, lclu: ITEMS.lclu, rclu: ITEMS.rclu
+    };
+  };
+  window.__pieces = function () { return PIECES; };
+  window.__screens = function () { return SCREENS; };
+  /* 球簇量测：每个物品名下所有球到「物品中心」的平均半径（球与贴球标签共用同一份数据） */
+  window.__clusterRadii = function () {
+    var out = {}, k;
+    for (k in ITEMS) if (Object.prototype.hasOwnProperty.call(ITEMS, k)) {
+      var els = document.querySelectorAll('.mball[data-item="' + k + '"]');
+      if (!els.length) continue;
+      var it = ITEMS[k], sum = 0, cnt = 0;
+      for (var i = 0; i < els.length; i++) {
+        var m = /translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)/.exec(els[i].style.transform || '');
+        if (!m) continue;
+        var bx = +m[1] + els[i].offsetWidth / 2, by = +m[2] + els[i].offsetHeight / 2;
+        sum += Math.sqrt(Math.pow(bx - (it.cx + it.dx), 2) + Math.pow(by - (it.cy + it.dy), 2));
+        cnt++;
+      }
+      if (cnt) out[k] = +(sum / cnt).toFixed(1);
+    }
+    return out;
+  };
+  /* 该屏的主角物品清单（v4：按节拍表的出场时刻归属到屏） */
+  window.__screenItems = function (i) {
+    var out = [], k, ev;
+    for (k in ITEMS) if (Object.prototype.hasOwnProperty.call(ITEMS, k)) {
+      ev = (ITEM_SPEC[k] || {}).ev;
+      if (ev != null && ev >= SCREENS[i].t0 && ev < SCREENS[i].t1) out.push(k);
+    }
+    return out;
+  };
+  /* 该屏所有图形件的起始时刻（图形先行以「最早的图形动作」为准，不只是物品） */
+  window.__structStarts = function (i) {
+    return screenNodes[i].structs
+      .map(function (r) { return (r.start == null ? null : r.start); })
+      .filter(function (v) { return v != null; });
+  };
+  /* ④ 附着层量测钩子（供 tools/attach-check.mjs 验收：主角物品状态 / 附着标签跟随与明暗） */
+  window.__items = function () {
+    var out = {}, k;
+    for (k in ITEMS) if (Object.prototype.hasOwnProperty.call(ITEMS, k)) {
+      var it = ITEMS[k];
+      out[k] = { cx:it.cx, cy:it.cy, ev:it.ev, dx:it.dx, dy:it.dy, k:+it.k.toFixed(4),
+                 out:(ITEM_SPEC[k] || {}).out, light:+it.light.toFixed(4), on:+it.on.toFixed(4) };
+    }
+    out.t = +curT.toFixed(3);
+    return out;
+  };
+  var lastFrameT = -1;
+  function loop(now) {
+    var prevT = lastFrameT;
+    if (playing) {
+      if (t0ms === null) t0ms = now - curT * 1000 / rate;
+      curT = (now - t0ms) / 1000 * rate;
+      if (curT >= TOTAL) { curT = TOTAL; playing = false; }
+    }
+    /* 时钟锚必须在渲染之前取：画面时间 curT 来自 rAF 时间戳 now，
+       与它同一瞬间的音频时钟配对，才不会有"渲染耗时"带来的系统偏移 */
+    var clockNow = SFX.ctx ? SFX.ctx.currentTime : now / 1000;
+    render(curT);
+    /* §6：只在真实播放时发声；跳转 / 回退 / 静态帧一律不触发 */
+    var live = playing && !staticFrame;
+    sfxTick(prevT, curT, live, clockNow);
+    if (live) bgmSync(curT);
+    lastFrameT = curT;
+    requestAnimationFrame(loop);
+  }
+  function fit() {
+    var s = Math.min(window.innerWidth / W, window.innerHeight / H);
+    stageEl.style.transform = 'translate(-50%,-50%) scale(' + s + ')';
+  }
+  window.addEventListener('resize', fit);
+  fit();
+  window.addEventListener('keydown', function (e) {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      if (playing) playing = false;
+      else { playing = true; t0ms = null; }
+    } else if (e.key === 'r' || e.key === 'R') {
+      curT = startAt; t0ms = null; playing = true; staticFrame = false;
+      SFX.resync = true;
+    }
+  });
+  if (staticFrame) {
+    curT = Math.max(0, Math.min(TOTAL, parseFloat(params.get('t')) || 0));
+    playing = false;
+    render(curT);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

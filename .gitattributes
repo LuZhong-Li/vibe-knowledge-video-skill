@@ -1,0 +1,9 @@
+# 规范与脚本统一用 LF（Windows 上也不会被 git 自动改成 CRLF，
+# 否则 .mjs / .md 里带 BOM 或 CRLF 会影响跨平台执行）
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.mp4 binary
+*.wav binary
+*.mp3 binary

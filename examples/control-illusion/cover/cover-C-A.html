@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>控制错觉 · 封面 · 方案C-A（实验数据款）</title>
+<!--
+  ============================================================
+  方案C｜实验数据款 · A 分支（极简柱）封面  ·  1920×1080 / 16:9
+
+  素材来源（一律取自 v7 成片，不重新绘制图形）：
+    ① 背景层  assets/plate-bg.png      ← 成片 S1 静帧背景（t=5.20s，S1 读字静止段）
+                                       粒子亮度 ×0.35，且核心区不画粒子
+    ② 柱体层  assets/bar-gold.png      ← 成片 S4 屏左柱（t=53.50s 生长完成态，2× 抓取）
+              assets/bar-gray.png      ← 成片 S4 屏右柱（同上）
+    ③ 4× 符号 不截图，直接复用正片 .metal 材质（background-clip:text 的同一张渐变底图）
+
+  版面表在 <script id="coverLayout">，抽帧脚本 / 校验脚本读同一份 JSON（单一事实来源）。
+
+  安全区：左右 96 / 上 54 / 核心区下沿 972（底部 10% 不放任何核心文字图形）。
+  调试：?grid=1 显示安全框与核心区。
+  ============================================================
+-->
+<style>
+  :root{
+    /* 方案C 色彩规范 */
+    --gold:#D4AF37;            /* 主金色（金属字 / 重点图形） */
+    --gray:#B4B4B4;            /* 辅助浅灰（普通标注 / 柱体描边） */
+    --gray-deep:#333338;       /* 深灰（柱状图底色） */
+    --bg-char:#0A0A0C;         /* 炭黑底 */
+    /* 正片同源色（金属字材质内部取样） */
+    --gold-hi:#D7B979; --gold-mid:#B8944A; --glow:#6B4A1A;
+    --ink:#F5F1E8; --ink-2:rgba(245,241,232,.62); --ink-3:rgba(245,241,232,.30);
+    --serif:"Source Han Serif SC","Noto Serif SC","Songti SC","STSong","SimSun","Times New Roman",serif;
+    --sans:"Source Han Sans SC","Noto Sans SC","PingFang SC","HarmonyOS Sans SC","Microsoft YaHei UI","Microsoft YaHei","Segoe UI",sans-serif;
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ width:100%; height:100%; background:#000; overflow:hidden; }
+  #viewport{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:#000; }
+  #stage{
+    position:absolute; left:50%; top:50%;
+    width:1920px; height:1080px;
+    transform-origin:center center; transform:translate(-50%,-50%) scale(1);
+    overflow:hidden; background:var(--bg-char);
+  }
+  /* Layer1 背景：成片 S1 静帧（粒子已压到 35%，核心区无粒子） */
+  #plate{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+  /* 底部渐隐：把最下面 10% 再压一档，保证抖音播放器 UI 压上来也不碍事 */
+  #footfade{
+    position:absolute; left:0; right:0; bottom:0; height:210px; pointer-events:none;
+    background:linear-gradient(180deg, rgba(10,10,12,0) 0%, rgba(10,10,12,.55) 62%, rgba(10,10,12,.80) 100%);
+  }
+  /* Layer2 对比柱：柱身=成片 S4 柱体素材，只做静态缩放；描边=封面级抗糊加固 */
+  .bar{ position:absolute; }
+  .bar img{ position:absolute; display:block; }
+  .bar .edge{
+    position:absolute; inset:0; box-sizing:border-box; border-radius:2px;
+    border-style:solid;
+  }
+  /* Layer4 文字层 */
+  .piece{ position:absolute; font-weight:400; }
+  .piece.metal{ background-repeat:no-repeat; background-size:100% 200%;
+    -webkit-background-clip:text; background-clip:text; color:transparent; }
+  /* 金属材质：与正片 .metal 同一张渐变底图（同源材质），仅高光落点按封面单独锁定 */
+  .metal-face{
+    background-image:linear-gradient(174deg,
+      #F2E0B4 0%, #F8EAC6 6%, #FFFBE9 14%, #F6E4B8 22%, #EFDCAF 30%,
+      #F6E7C0 38%, #FFFDF0 50%, #F6E4B8 58%, #EFDCAF 66%,
+      #F6E7C0 74%, #FFFBE9 85%, #F6E4B8 93%, #F2E0B4 100%);
+  }
+  #title{ white-space:nowrap; -webkit-text-stroke:1.2px rgba(74,48,12,.30);
+          filter:drop-shadow(0 10px 34px rgba(107,74,26,.40)); }
+  #num4x{ white-space:nowrap; line-height:1; -webkit-text-stroke:.8px rgba(74,48,12,.26);
+          filter:drop-shadow(0 8px 30px rgba(107,74,26,.42)); }
+  #sub{ white-space:nowrap; }
+  #ip{ white-space:nowrap; }
+  #tag{ white-space:nowrap; }
+  #guides{ position:absolute; inset:0; display:none; pointer-events:none; z-index:9; }
+  #guides i{ position:absolute; border:1px dashed rgba(255,120,120,.55); }
+  #guides i.core{ border-color:rgba(120,200,255,.45); }
+</style>
+</head>
+<body>
+<div id="viewport">
+  <div id="stage">
+    <img id="plate" alt="" />
+    <div id="footfade"></div>
+    <div id="bars"></div>
+    <div id="texts"></div>
+    <div id="guides"></div>
+  </div>
+</div>
+
+<script id="coverLayout" type="application/json">
+{
+  "stage": { "w": 1920, "h": 1080 },
+  "safe": { "left": 96, "right": 1824, "top": 54, "coreBottom": 972 },
+  "assets": {
+    "plate": "assets/plate-bg.png",
+    "barGold": "assets/bar-gold.png",
+    "barGray": "assets/bar-gray.png",
+    "capture": { "pad": 56, "scale": 2 }
+  },
+  "particleDim": 0.35,
+  "bars": [
+    { "id": "barGold", "asset": "barGold", "role": "自己选择 · 实验组",
+      "x": 500, "baseline": 932, "w": 84, "h": 472, "filmClass": "vbar vbar-gold",
+      "outline": "rgba(212,175,55,.95)", "outlineW": 2.4,
+      "topLight": "rgba(255,251,233,.30)" },
+    { "id": "barGray", "asset": "barGray", "role": "随机分配 · 对照组",
+      "x": 1336, "baseline": 932, "w": 84, "h": 118, "filmClass": "vbar vbar-gray",
+      "outline": "rgba(180,180,180,.74)", "outlineW": 2.0,
+      "topLight": "rgba(255,251,233,.26)" }
+  ],
+  "pieces": [
+    { "id": "ip",    "t": "VIBE知识大赏",            "x": 96,  "y": 62,  "fs": 34,  "ls": ".30em",
+      "color": "rgba(180,180,180,.78)", "font": "serif", "align": "left" },
+    { "id": "title", "t": "控制错觉",                 "cx": 960, "y": 150, "fs": 168, "weight": 700,
+      "ls": ".06em", "font": "sans", "align": "center", "metal": true, "metalPos": "46%", "inkDx": 6 },
+    { "id": "sub",   "t": "仅仅选择，感知差距放大4倍",  "cx": 960, "y": 386, "fs": 46, "weight": 400,
+      "ls": ".10em", "color": "rgba(180,180,180,.92)", "font": "sans", "align": "center", "nowrap": true, "inkDx": 2 },
+    { "id": "num4x", "t": "4×",                       "cx": 960, "cy": 672, "fs": 430, "weight": 600,
+      "ls": ".02em", "font": "serif", "align": "center", "metal": true, "metalPos": "50%",
+      "inkDx": 39, "inkDy": -33 },
+    { "id": "tag",   "t": "#控制错觉",                 "right": 96, "y": 872, "fs": 30, "ls": ".10em",
+      "color": "rgba(180,180,180,.55)", "font": "serif", "align": "right" }
+  ],
+  "coreBoxes": [
+    { "id": "titleBand", "x": 360,  "y": 100, "w": 1200, "h": 380 },
+    { "id": "anchor4x",  "x": 640,  "y": 480, "w": 640,  "h": 390 },
+    { "id": "barBand",   "x": 470,  "y": 430, "w": 980,  "h": 540 }
+  ]
+}
+</script>
+
+<script>
+(function () {
+  'use strict';
+  var L = JSON.parse(document.getElementById('coverLayout').textContent);
+  var stage = document.getElementById('stage');
+  var textsRoot = document.getElementById('texts');
+  var barsRoot = document.getElementById('bars');
+  var FONT = { serif: getComputedStyle(document.documentElement).getPropertyValue('--serif'),
+               sans:  getComputedStyle(document.documentElement).getPropertyValue('--sans') };
+
+  function el(tag, cls, css, parent) {
+    var d = document.createElement(tag);
+    if (cls) d.className = cls;
+    if (css) for (var k in css) d.style[k] = css[k];
+    (parent || stage).appendChild(d);
+    return d;
+  }
+
+  /* ---------- Layer1：成片 S1 静帧背景 ---------- */
+  var plate = document.getElementById('plate');
+  plate.src = L.assets.plate;
+  plate.dataset.particleDim = String(L.particleDim);
+
+  /* ---------- Layer2：成片 S4 对比柱（静态缩放 + 封面级描边） ---------- */
+  var cap = L.assets.capture;
+  L.bars.forEach(function (b) {
+    var wrap = el('div', 'bar', {
+      left: b.x + 'px', top: (b.baseline - b.h) + 'px', width: b.w + 'px', height: b.h + 'px'
+    }, barsRoot);
+    wrap.id = b.id;
+    var name = b.asset === 'barGold' ? L.assets.barGold : L.assets.barGray;
+    /* 资产按 2× 抓取（内容尺寸 = 柱体 + pad），这里按 1× 摆放 → 浏览器缩小 0.5，绝不放大发虚 */
+    var img = el('img', '', {
+      left: -cap.pad + 'px', top: -cap.pad + 'px',
+      width: (b.w + cap.pad * 2) + 'px',
+      height: (b.h + cap.pad * 2) + 'px'
+    }, wrap);
+    img.src = name;
+    img.dataset.captureScale = String(cap.scale);
+    img.dataset.filmClass = b.filmClass;
+    var edge = el('i', 'edge', {
+      borderWidth: b.outlineW + 'px', borderColor: b.outline,
+      boxShadow: 'inset 0 2px 0 ' + b.topLight
+    }, wrap);
+    edge.dataset.outline = b.outlineW + 'px ' + b.outline;
+  });
+
+  /* ---------- Layer4：文字层 ---------- */
+  L.pieces.forEach(function (p) {
+    var d = el('div', 'piece' + (p.metal ? ' metal metal-face' : ''), {
+      fontFamily: FONT[p.font], fontSize: p.fs + 'px', fontWeight: p.weight || 400,
+      letterSpacing: p.ls || 'normal', lineHeight: '1'
+    }, textsRoot);
+    d.id = p.id;
+    d.textContent = p.t;
+    if (p.color) d.style.color = p.color;
+    if (p.metal) d.style.backgroundPosition = '0% ' + (p.metalPos || '50%');
+    if (p.nowrap) d.style.whiteSpace = 'nowrap';
+    /* 定位：先量出天然盒，再按「墨迹盒」对齐到版面上（文字墨迹≠行盒，必须实测） */
+    var w = d.offsetWidth, h = d.offsetHeight;
+    if (p.align === 'center') { d.style.left = (p.cx - w / 2) + 'px'; }
+    else if (p.align === 'right') { d.style.right = p.right + 'px'; }
+    else { d.style.left = p.x + 'px'; }
+    if (p.cy != null) { d.style.top = (p.cy - h / 2) + 'px'; }
+    else { d.style.top = p.y + 'px'; }
+    /* 居中件再做一次「墨迹居中」补偿：字体的左右边距会让行盒中心 ≠ 墨迹中心。
+       该偏移由 tools/cover-check.mjs 从成品图实测标定后写回 inkDx（行盒→墨迹中心的 px 修正）。 */
+    if (p.align === 'center' && p.inkDx) d.style.left = (parseFloat(d.style.left) + p.inkDx) + 'px';
+    if (p.inkDy) d.style.top = (parseFloat(d.style.top) + p.inkDy) + 'px';
+    d.dataset.box = [Math.round(d.offsetLeft), Math.round(d.offsetTop), w, h].join(',');
+  });
+
+  /* ---------- 安全区 / 核心区参考线（?grid=1） ---------- */
+  if (new URLSearchParams(location.search).get('grid') === '1') {
+    var g = document.getElementById('guides'); g.style.display = 'block';
+    var S = L.safe;
+    var box = function (x, y, w, h, cls) {
+      var i = document.createElement('i'); if (cls) i.className = cls;
+      i.style.left = x + 'px'; i.style.top = y + 'px'; i.style.width = w + 'px'; i.style.height = h + 'px';
+      g.appendChild(i);
+    };
+    box(S.left, S.top, S.right - S.left, S.coreBottom - S.top);
+    L.coreBoxes.forEach(function (b) { box(b.x, b.y, b.w, b.h, 'core'); });
+  }
+
+  /* 渲染就绪钩子：抽帧/出图脚本等它 */
+  window.__cover = function () {
+    var out = { layout: L, stage: { w: L.stage.w, h: L.stage.h }, bars: [], pieces: [], fonts: {} };
+    document.querySelectorAll('.bar').forEach(function (w) {
+      var img = w.querySelector('img');
+      out.bars.push({ id: w.id, x: w.offsetLeft, y: w.offsetTop, w: w.offsetWidth, h: w.offsetHeight,
+                      asset: img.getAttribute('src'), scale: img.dataset.scale,
+                      captureScale: img.dataset.captureScale, filmClass: img.dataset.filmClass,
+                      outline: w.querySelector('.edge').dataset.outline,
+                      natural: [img.naturalWidth, img.naturalHeight] });
+    });
+    document.querySelectorAll('.piece').forEach(function (d) {
+      var src = L.pieces.filter(function (x) { return x.id === d.id; })[0] || {};
+      out.pieces.push({ id: d.id, t: d.textContent, x: d.offsetLeft, y: d.offsetTop,
+                        w: d.offsetWidth, h: d.offsetHeight,
+                        inkDx: src.inkDx || 0, inkDy: src.inkDy || 0,
+                        fontFamily: getComputedStyle(d).fontFamily,
+                        fontSize: getComputedStyle(d).fontSize,
+                        color: getComputedStyle(d).color,
+                        metal: d.classList.contains('metal') });
+    });
+    out.fonts = {
+      serifResolved: FONT.serif.trim(),
+      sansResolved: FONT.sans.trim(),
+      titleFamily: getComputedStyle(document.getElementById('title')).fontFamily,
+      num4xWidth: document.getElementById('num4x').offsetWidth,
+      titleWidth: document.getElementById('title').offsetWidth
+    };
+    return out;
+  };
+  window.__ready = new Promise(function (res) {
+    function go() { res(true); }
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () {
+      if (plate.complete) go(); else plate.addEventListener('load', go, { once: true });
+    }); else if (plate.complete) go(); else plate.addEventListener('load', go, { once: true });
+  });
+})();
+</script>
+</body>
+</html>

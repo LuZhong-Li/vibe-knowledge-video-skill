@@ -147,3 +147,12 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# ---- 本项目（vibe-knowledge-video-skill）追加 ----
+# 逐帧渲染与体检的中间产物：体积大、可复现，不入库
+frames/
+*.frames/
+_frames/
+qa/**/frames/
+_checks-*.log
+

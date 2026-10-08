@@ -1,0 +1,138 @@
+{
+  "generatedAt": "2026-10-08T06:55:10.082Z",
+  "film": "v2/control-illusion-v2.html",
+  "cover": "qa/v2/v7/cover/cover-C-A.html",
+  "urlsFromCover": {
+    "plate": "../qa/v2/v7/cover/assets/plate-bg.png",
+    "barGold": "../qa/v2/v7/cover/assets/bar-gold.png",
+    "barGray": "../qa/v2/v7/cover/assets/bar-gray.png"
+  },
+  "plate": {
+    "t": 5.2,
+    "particleDim": 0.35,
+    "core": [
+      {
+        "id": "titleBand",
+        "x": 360,
+        "y": 100,
+        "w": 1200,
+        "h": 380
+      },
+      {
+        "id": "anchor4x",
+        "x": 640,
+        "y": 480,
+        "w": 640,
+        "h": 390
+      },
+      {
+        "id": "barBand",
+        "x": 470,
+        "y": 430,
+        "w": 980,
+        "h": 540
+      }
+    ],
+    "light": {
+      "t": 5.2,
+      "x": 315.97,
+      "y": 430.85,
+      "r": 640
+    },
+    "particles": {
+      "total": 152,
+      "skippedInCore": 76,
+      "drawnOutside": 76,
+      "maxAlphaDrawn": 0.055,
+      "maxAlphaInCoreIfDrawn": 0.047
+    },
+    "file": "plate-bg.png",
+    "px": [
+      1920,
+      1080
+    ],
+    "bytes": 2598442
+  },
+  "bars": {
+    "t": 53.5,
+    "scale": 2,
+    "pad": 56,
+    "measured": [
+      {
+        "file": "bar-gold.png",
+        "cls": "vbar vbar-gold",
+        "filmClass": "vbar vbar-gold",
+        "source": {
+          "cssRect": [
+            259,
+            956,
+            46,
+            475
+          ],
+          "opacity": "0.92"
+        },
+        "rendered": {
+          "w": 84,
+          "h": 472,
+          "bottom": 932,
+          "top": 484
+        },
+        "pad": 56,
+        "devicePx": [
+          392,
+          1168
+        ]
+      },
+      {
+        "file": "bar-gray.png",
+        "cls": "vbar vbar-gray",
+        "filmClass": "vbar vbar-gray",
+        "source": {
+          "cssRect": [
+            1565,
+            956,
+            46,
+            118
+          ],
+          "opacity": "0.92"
+        },
+        "rendered": {
+          "w": 84,
+          "h": 118,
+          "bottom": 932,
+          "top": 838
+        },
+        "pad": 56,
+        "devicePx": [
+          392,
+          460
+        ]
+      }
+    ],
+    "geometryFix": {
+      "note": "正片 bar() 把柱体 top 设成 ry(0.885)（= 柱底），柱身高度没减掉，475px 金柱有 88% 落在画外（成片 S4 只剩 124px 柱头）。音效事件名是「对比柱从底部生长」，说明本意是「柱底对齐 y=956、向上长」。封面按本意把柱底锚到 baseline，柱体材质仍取正片 .vbar-gold / .vbar-gray 同一份 CSS，不重画图形。",
+      "filmNative": [
+        [
+          259,
+          956,
+          46,
+          475
+        ],
+        [
+          1565,
+          956,
+          46,
+          118
+        ]
+      ],
+      "filmAnchorY": 956
+    }
+  },
+  "num4x": {
+    "x": 810,
+    "y": 316,
+    "w": 485.109375,
+    "h": 330,
+    "fs": "300px"
+  }
+}

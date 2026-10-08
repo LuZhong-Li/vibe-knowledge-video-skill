@@ -1,0 +1,257 @@
+{
+  "layout": {
+    "stage": {
+      "w": 1920,
+      "h": 1080
+    },
+    "safe": {
+      "left": 96,
+      "right": 1824,
+      "top": 54,
+      "coreBottom": 972
+    },
+    "assets": {
+      "plate": "assets/plate-bg.png",
+      "barGold": "assets/bar-gold.png",
+      "barGray": "assets/bar-gray.png",
+      "capture": {
+        "pad": 56,
+        "scale": 2
+      }
+    },
+    "particleDim": 0.35,
+    "bars": [
+      {
+        "id": "barGold",
+        "asset": "barGold",
+        "role": "自己选择 · 实验组",
+        "x": 500,
+        "baseline": 932,
+        "w": 84,
+        "h": 472,
+        "filmClass": "vbar vbar-gold",
+        "outline": "rgba(212,175,55,.95)",
+        "outlineW": 2.4,
+        "topLight": "rgba(255,251,233,.30)"
+      },
+      {
+        "id": "barGray",
+        "asset": "barGray",
+        "role": "随机分配 · 对照组",
+        "x": 1336,
+        "baseline": 932,
+        "w": 84,
+        "h": 118,
+        "filmClass": "vbar vbar-gray",
+        "outline": "rgba(180,180,180,.74)",
+        "outlineW": 2,
+        "topLight": "rgba(255,251,233,.26)"
+      }
+    ],
+    "pieces": [
+      {
+        "id": "ip",
+        "t": "VIBE知识大赏",
+        "x": 96,
+        "y": 62,
+        "fs": 34,
+        "ls": ".30em",
+        "color": "rgba(180,180,180,.78)",
+        "font": "serif",
+        "align": "left"
+      },
+      {
+        "id": "title",
+        "t": "控制错觉",
+        "cx": 960,
+        "y": 150,
+        "fs": 168,
+        "weight": 700,
+        "ls": ".06em",
+        "font": "sans",
+        "align": "center",
+        "metal": true,
+        "metalPos": "46%",
+        "inkDx": 6
+      },
+      {
+        "id": "sub",
+        "t": "仅仅选择，感知差距放大4倍",
+        "cx": 960,
+        "y": 386,
+        "fs": 46,
+        "weight": 400,
+        "ls": ".10em",
+        "color": "rgba(180,180,180,.92)",
+        "font": "sans",
+        "align": "center",
+        "nowrap": true,
+        "inkDx": 2
+      },
+      {
+        "id": "num4x",
+        "t": "4×",
+        "cx": 960,
+        "cy": 672,
+        "fs": 430,
+        "weight": 600,
+        "ls": ".02em",
+        "font": "serif",
+        "align": "center",
+        "metal": true,
+        "metalPos": "50%",
+        "inkDx": 39,
+        "inkDy": -33
+      },
+      {
+        "id": "tag",
+        "t": "#控制错觉",
+        "right": 96,
+        "y": 872,
+        "fs": 30,
+        "ls": ".10em",
+        "color": "rgba(180,180,180,.55)",
+        "font": "serif",
+        "align": "right"
+      }
+    ],
+    "coreBoxes": [
+      {
+        "id": "titleBand",
+        "x": 360,
+        "y": 100,
+        "w": 1200,
+        "h": 380
+      },
+      {
+        "id": "anchor4x",
+        "x": 640,
+        "y": 480,
+        "w": 640,
+        "h": 390
+      },
+      {
+        "id": "barBand",
+        "x": 470,
+        "y": 430,
+        "w": 980,
+        "h": 540
+      }
+    ]
+  },
+  "stage": {
+    "w": 1920,
+    "h": 1080
+  },
+  "bars": [
+    {
+      "id": "barGold",
+      "x": 500,
+      "y": 460,
+      "w": 84,
+      "h": 472,
+      "asset": "assets/bar-gold.png",
+      "captureScale": "2",
+      "filmClass": "vbar vbar-gold",
+      "outline": "2.4px rgba(212,175,55,.95)",
+      "natural": [
+        392,
+        1168
+      ]
+    },
+    {
+      "id": "barGray",
+      "x": 1336,
+      "y": 814,
+      "w": 84,
+      "h": 118,
+      "asset": "assets/bar-gray.png",
+      "captureScale": "2",
+      "filmClass": "vbar vbar-gray",
+      "outline": "2px rgba(180,180,180,.74)",
+      "natural": [
+        392,
+        460
+      ]
+    }
+  ],
+  "pieces": [
+    {
+      "id": "ip",
+      "t": "VIBE知识大赏",
+      "x": 96,
+      "y": 62,
+      "w": 300,
+      "h": 34,
+      "inkDx": 0,
+      "inkDy": 0,
+      "fontFamily": "\"Source Han Serif SC\", \"Noto Serif SC\", \"Songti SC\", STSong, SimSun, \"Times New Roman\", serif",
+      "fontSize": "34px",
+      "color": "rgba(180, 180, 180, 0.78)",
+      "metal": false
+    },
+    {
+      "id": "title",
+      "t": "控制错觉",
+      "x": 610,
+      "y": 150,
+      "w": 712,
+      "h": 168,
+      "inkDx": 6,
+      "inkDy": 0,
+      "fontFamily": "\"Source Han Sans SC\", \"Noto Sans SC\", \"PingFang SC\", \"HarmonyOS Sans SC\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", sans-serif",
+      "fontSize": "168px",
+      "color": "rgba(0, 0, 0, 0)",
+      "metal": true
+    },
+    {
+      "id": "sub",
+      "t": "仅仅选择，感知差距放大4倍",
+      "x": 644,
+      "y": 386,
+      "w": 637,
+      "h": 46,
+      "inkDx": 2,
+      "inkDy": 0,
+      "fontFamily": "\"Source Han Sans SC\", \"Noto Sans SC\", \"PingFang SC\", \"HarmonyOS Sans SC\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", sans-serif",
+      "fontSize": "46px",
+      "color": "rgba(180, 180, 180, 0.92)",
+      "metal": false
+    },
+    {
+      "id": "num4x",
+      "t": "4×",
+      "x": 652,
+      "y": 424,
+      "w": 695,
+      "h": 430,
+      "inkDx": 39,
+      "inkDy": -33,
+      "fontFamily": "\"Source Han Serif SC\", \"Noto Serif SC\", \"Songti SC\", STSong, SimSun, \"Times New Roman\", serif",
+      "fontSize": "430px",
+      "color": "rgba(0, 0, 0, 0)",
+      "metal": true
+    },
+    {
+      "id": "tag",
+      "t": "#控制错觉",
+      "x": 1672,
+      "y": 872,
+      "w": 152,
+      "h": 30,
+      "inkDx": 0,
+      "inkDy": 0,
+      "fontFamily": "\"Source Han Serif SC\", \"Noto Serif SC\", \"Songti SC\", STSong, SimSun, \"Times New Roman\", serif",
+      "fontSize": "30px",
+      "color": "rgba(180, 180, 180, 0.55)",
+      "metal": false
+    }
+  ],
+  "fonts": {
+    "serifResolved": "\"Source Han Serif SC\",\"Noto Serif SC\",\"Songti SC\",\"STSong\",\"SimSun\",\"Times New Roman\",serif",
+    "sansResolved": "\"Source Han Sans SC\",\"Noto Sans SC\",\"PingFang SC\",\"HarmonyOS Sans SC\",\"Microsoft YaHei UI\",\"Microsoft YaHei\",\"Segoe UI\",sans-serif",
+    "titleFamily": "\"Source Han Sans SC\", \"Noto Sans SC\", \"PingFang SC\", \"HarmonyOS Sans SC\", \"Microsoft YaHei UI\", \"Microsoft YaHei\", \"Segoe UI\", sans-serif",
+    "num4xWidth": 695,
+    "titleWidth": 712
+  }
+}
