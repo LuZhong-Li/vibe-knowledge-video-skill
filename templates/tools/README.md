@@ -42,6 +42,10 @@
 | `cover-extract.mjs` / `cover-render.mjs` / `cover-check.mjs` | 封面：从成片抽素材，出 16:9 JPG/PNG + 缩略测试图，8 条《最终校验项》逐条给数 | 见文件头 |
 | `imgscan.mjs` | 把成品图打成字符图输出到终端（没有看图能力时用来「看」版面） | `node imgscan.mjs <图片> [列数=112]` |
 | `anti-slop.mjs` | §18.1 反模式分诊单：封装 `impeccable detect`（59 条确定性规则，离线），默认起服务扫 URL（看得见 JS 渲染出的元素），结果分三桶。需要联网首次拉取 `impeccable` | `node anti-slop.mjs [--html <成片.html>] [--file] [--json]` |
+| `textbox-check.mjs` | **A32 文字盒**：横向溢出 / 换行 / 越界。横向溢出是阻断项——`background-clip:text` 的金属字在盒外没有 background 可裁，**末字会整块丢填充**；竖向溢出只作提示（L0 的 `line-height` < em 盒，常态） | `node textbox-check.mjs <html>` |
+| `readability-check.mjs` | **A33 文字可读性**：逐片算「阅读阶段最差分帧对比度」（片盒内线性亮度 p97 笔画 / p50 底色，取最小值 + 最差帧时刻）。只测阅读阶段，跳过入场淡入与屏尾淡出 | `node readability-check.mjs <html> <帧目录> [--stride 4] [--md <输出.md>]` |
+| `ink-bands.mjs` | **缺字自证**：把文字盒横向切成 N 条带算墨量，某带 < 中位一半即判「整字丢填充」 | `node ink-bands.mjs <图片> "x0,y0,x1,y1" 5 [--thr 0.10]` |
+| `measure-motion.mjs` | **A34 动帧占比 · 口径对齐**：同一部片子同时输出样片口径（160×90 / >0.012）与自建口径（320×180 / >0.0015），避免拿错尺子去比样片 | `node measure-motion.mjs <成片.mp4 或 --seq <帧目录>> [--fps 30]` |
 
 ---
 
@@ -56,10 +60,13 @@
 | `serve.mjs` | 默认入口文件（原来写死为本项目成片） | 换项目后访问 `/` 会 404 |
 | `cover-extract.mjs` / `cover-render.mjs` / `cover-check.mjs` | 封面版面表与 8 条校验项（本项目是「极简柱」方案） | 封面方案换了，校验项也要跟着换 |
 | `copy-table.mjs` / `film-stills.mjs` | 一般不用改（从页面读 `__screens()` / `__pieces()`） | — |
+| `readability-check.mjs` | 一般不用改（画布尺寸从 `__canvas()` 读、帧目录与 fps 走参数）；只有当「阅读阶段」的窗口口径不同（入场时长 / 屏尾淡出）才需要调 `fadeDur` 与 `-1.0` | 把入场半透明帧算进 min 会得出"所有字都不可读"的假结论 |
+| `textbox-check.mjs` | 一般不用改（安全框字段取 `__canvas().safe` 的 `left/right/top/bottom`） | 字段名写错会变 `NaN` 比较恒 false，**越界检查会静默失效** |
+| `ink-bands.mjs` / `measure-motion.mjs` | 一般不用改（图片盒与 fps 走参数；`measure-motion` 的 ffmpeg 走 PATH，可用环境变量 `FFMPEG` 覆盖） | — |
 
 ---
 
-## 4 三条硬规矩（本项目踩过）
+## 4 五条硬规矩（本项目踩过）
 
 1. **体检脚本里不要写死画布尺寸** —— 一律从 `window.__canvas()` 读，切 16:9 / 2K 不用改脚本。
 2. **页面必须把体检要的数字主动暴露出来**（`data-lf` / `__items()` / `__light()` / `__narrative()`），
@@ -68,3 +75,9 @@
 3. **图形件的几何要能自证**。柱体 `top` 忘了减柱高，正片里 4 倍差距没立起来，
    而几何体检只查"有没有越界"，查不出"高度比对不对" —— 最后是**封面按本意几何出图**时才暴露的。
    任何"比例/数量"要表达的结论，都要有一条能算出比例的检查。
+4. **体检脚本串行跑**。多个脚本同时启动无头浏览器会抢同一 CDP 端口 → `Inspected target navigated or closed`
+   崩溃，并留下**僵尸无头进程 + 挂起 node**（第二期一次性积了 26 个，之后体检莫名卡住）。
+   要并行就得给每个 `launch()` 显式不同 `port`；收工前按临时 profile 名 `cdp-profile-*` 清进程。
+5. **任何跨片比较的数字，先写清口径来源**。同一个片子，"动帧占比"换成更敏感的缩放尺寸/阈值会从
+   0.00% 变成 1.4%（差 11 倍）。口径（缩放尺寸 / 滤波 / 阈值 / 量帧序列还是量 mp4）必须写在报告里，
+   否则数字本身没有意义。
