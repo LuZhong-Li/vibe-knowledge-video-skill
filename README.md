@@ -797,3 +797,62 @@ vibe-knowledge-video-skill/
    整块金属数字）。06 全片 7.3% 是上限样本，再高就该怀疑「金色文字 >5 处」（§5.5）。
 6. **开场音轨可以复用**：01 与 05 的 0–10s 音轨逐样本相关度 **1.00**（同一段），
    而同窗口画面相关度只有 0.38 —— 复用片头音轨、每片重做画面，是这套系列的真实做法。
+
+---
+
+## 18 上游仓库（取材源与检查器）
+
+> 2026-10-09 采集到 `D:\树根\upstream\`（浅克隆 17 个，合计 3.3 GB）。
+> 清单、体积、许可与复现命令在 `D:\树根\upstream\README.md`。
+
+**先立规矩：这批仓库是取材源，不是依赖源。** 片子永远是「单文件 HTML / 零依赖 / 可 seek」（§7.1）。
+「每次设计都把 17 个都调用一遍」不可执行 —— 其中 6 个与本管线无关（见文末表），
+硬塞进上下文只会挤掉真正要看的东西。可执行的版本是下面这些。
+
+### 18.1 每次设计都做
+
+**跑一遍反模式自检**（约 10 秒，离线、不用 LLM、不用 API key）：
+
+```powershell
+npx -y impeccable@latest detect <成片.html> --json
+```
+
+退出码 `0` = 无 primary finding，`2` = 有。它检查的是「AI 生成前端」的通用表征
+（Inter 满场、紫蓝渐变、卡片套卡片、圆角图标块…），正好补上 §4.6 手写禁止清单没覆盖的部分。
+
+**已知会命中本 skill 的故意签名，不要为了过检查把它们改掉**（2026-10-09 实测）：
+
+| 目标 | 命中 | 对应本 skill 的哪条**故意**设计 |
+| --- | --- | --- |
+| `templates/shot-template.html` | `gradient-text` | §5.5 金属渐变字（金属字必须走 `background-clip:text`） |
+| `examples/control-illusion/control-illusion.html` | `dark-glow` | §4.4 棕金光晕（背景弱结构② ③） |
+
+两份都只命中这 1 条 —— 说明 §4.6 的禁止清单本身已经把这批片子守得很干净。豁免用
+`.impeccable/config.json` 的 `detector.ignoreRules`，或文件内 `<!-- impeccable-disable gradient-text -->`。
+
+### 18.2 按需查（用到哪个翻哪个）
+
+| 上游 | 什么时候翻 | 怎么用 |
+| --- | --- | --- |
+| `hyperframes`（Apache-2.0） | 想核「HTML → 确定性视频」的契约，或看别人怎么组织分镜 / 动效 / 音频 | `skills/faceless-explainer`、`skills/hyperframes-animation`、`skills/hyperframes-audio`、`packages/lint` 是**同题不同解**，当参照读。本机 hypit 已装它的 engine/producer |
+| `impeccable`（Apache-2.0） | 每次（见 §18.1） | `detect` 扫文件；`skill/reference/*.md` 是 24 条设计命令的说明 |
+| `taste-skill`（MIT） | 要换一种风格（minimalist / brutalist / soft / brandkit）时 | 13 个子 skill，当风格词表与约束清单读 |
+| `mermaid` + `mermaid-cli`（MIT） | 画流程图 / 时序图的概念稿 | 只出概念稿；进片子的图仍按 §6.1 自绘 |
+| `fontsource`（MIT） | **只对拉丁文**（§4.5 的英文副题） | 拉丁子集可 base64 内联（几十 KB）；**中文字体仍然只用系统栈**（§2），不要打包中文字体 |
+| `remotion`（⚠️ Remotion License，非 OSI） | 想走替代管线时 | 定位见 §7.5：只能当上游素材生成器 |
+
+### 18.3 明确不用（已评估，别再翻）
+
+| 上游 | 为什么不用 |
+| --- | --- |
+| `ClaraVerse`（⚠️ AGPL-3.0） | 自托管 AI 工作台，与本管线无关；AGPL 也不适合往分发物里搬 |
+| `imagegencam`（Apache-2.0） | 3D 打印相机的硬件项目 |
+| `roughdraft.js`（⚠️ 无许可声明） | 自动填占位文案/图；本 skill 要的是**逐字原稿**（A5），占位内容是反目标 |
+| `shadcn-ui/ui`、`shadcn-ui/taxonomy`、`awesome-shadcn-ui`、`radix-ui/primitives`（均 MIT） | React 组件库，单文件零依赖的片子用不上；§4.2 已经把三类文字与附着关系写死了 |
+| `github-readme-stats`、`github-profile-readme-generator`、`markdown-badges`（均 MIT） | README 装饰，与片子无关 |
+
+### 18.4 许可提醒
+
+Apache-2.0 / MIT 可以取用（保留声明）；**`remotion` 是 Remotion License 不是 OSI 许可**，
+公司规模超过阈值需付费；**`ClaraVerse` 是 AGPL-3.0**；**`roughdraft.js` 没有许可声明**——
+后三个都别把代码搬进要分发的产物里。
