@@ -162,6 +162,10 @@
   function rSize(px){ return Math.round(px * kH() * 1000) / 1000; }
   var SAFE = { left:rx(.05), right:rx(.95), top:ry(.05), bottom:ry(.95) };
   var STAGE_IN = 0.80, PIECE_FADE = 0.85, FLOAT_PERIOD = 14, OUT_LEAD = 0.90;
+  /* 变速剪辑（README §5.7）：出场 0.30s 向左加速到 -230px、淡出在 60% 行程处完成；
+     入场 0.30s 从 +230px 减速度归位、亮度下限 0.15（防两屏之间出现空场）。
+     切点两侧的 −230 → +230 跳变由透明度谷底遮住：出场已淡尽、入场只剩 0.15。 */
+  var CUT_OUT = 0.30, CUT_IN = 0.30, CUT_FADE = 0.18, CUT_TRAVEL = 230, CUT_FLOOR = 0.15;
 
   var textsRoot = document.getElementById('texts');
   var structRoot = document.getElementById('structures');
@@ -201,6 +205,37 @@
   function smoothstep(x){ x = clamp01(x); return x * x * (3 - 2 * x); }
   function fadeIn(t, at, dur){ return smoothstep((t - at) / (dur || PIECE_FADE)); }
   function fadeOut(t, at, dur){ return 1 - smoothstep((t - at) / (dur || OUT_LEAD)); }
+  /* ---- 变速剪辑：一个全局水平偏移，物品与文字一起位移（相对关系不变） ---- */
+  function cutOffset(t){
+    var T = rSize(CUT_TRAVEL);
+    for (var i = 0; i < CUTS.length; i++){
+      var c = CUTS[i];
+      if (t > c - CUT_OUT && t <= c){ var u = (t - (c - CUT_OUT)) / CUT_OUT; return -T * (u * u * u); }
+      if (t > c && t <= c + CUT_IN){ var v = (t - c) / CUT_IN; var w = 1 - v; return T * (w * w * w * w); }
+    }
+    return 0;
+  }
+  /* 出场侧：在切点前 0.30s 起，0.18s 内降到 0.15 就停住，一直亮到切点才归零
+     （cut-catalog 的 Phase 1 就是「不透明度 1.0 → 0.15」，硬切才置 0）。
+     好处：切点那一帧两边各有 0.15，不会出现「旧屏已没、新屏第一句还没到点」的空场帧。 */
+  function cutExitFade(t, c){
+    if (t <= c - CUT_OUT) return 1;
+    if (t > c) return 0;                                   // 切点之后交给出场屏自己
+    var u = (t - (c - CUT_OUT)) / CUT_FADE;
+    return u >= 1 ? CUT_FLOOR : 1 - (1 - CUT_FLOOR) * u;
+  }
+  /* 末屏不做出场：片子要停在末屏（A6 / playback-check） */
+  function screenExit(t, t1){ return t1 >= TOTAL - 0.001 ? 1 : cutExitFade(t, t1); }
+  /* 入场亮度下限：只抬「本来就在切点附近出场」的元素，让它提前 ≤0.30s 以 0.15 亮着入场，
+     否则出场在切点淡尽、新屏第一句话还没到点，会出现一帧空场（smoke-check 抓到过）。
+     开场（第 0 屏）不是换页，不加下限。 */
+  function screenIdxAt(t){ for (var i = 0; i < SCREENS.length; i++) if (t >= SCREENS[i].t0 && t < SCREENS[i].t1) return i; return 0; }
+  function cutFloor(t, due, screenIdx){
+    if (screenIdx <= 0) return 0;
+    var s = SCREENS[screenIdx];
+    if (due > s.t0 + CUT_IN) return 0;
+    return (t >= s.t0 && t < s.t0 + CUT_IN) ? CUT_FLOOR : 0;
+  }
   function mulberry32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0;
     var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
     return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -219,6 +254,9 @@
     { id:'s2', label:'概念',   note:'ILLUSION OF CONTROL', t0:6, t1:14, bg:{ rays:0.22, glow:0.55 } },
     { id:'s3', label:'量化数据', note:'同样的概率，不同的心理定价', t0:14, t1:20, bg:{ rays:0.34, glow:0.60 } }
   ];
+  /* 换页切点＝除末屏外每屏的 t1（末屏没有下一屏，不切） */
+  var CUTS = SCREENS.slice(0, SCREENS.length - 1).map(function(s){ return s.t1; });
+  function screenT0Of(t){ for (var i = 0; i < SCREENS.length; i++) if (t >= SCREENS[i].t0 && t < SCREENS[i].t1) return SCREENS[i].t0; return 0; }
   var S1_T = {
     ball: 0.40, growDur: 1.50, digit: 1.00,
     tag1: 2.50, tag2: 3.10, title: 3.90, title2: 4.50, note: 3.00, out: 6.00
@@ -375,8 +413,10 @@
   function updateItems(t, L){
     for (var k in ITEMS) if (Object.prototype.hasOwnProperty.call(ITEMS, k)) {
       var it = ITEMS[k], sp = ITEM_SPEC[k] || { ev:0, out:TOTAL };
-      it.on = fadeIn(t, sp.ev, STAGE_IN) * fadeOut(t, sp.out, OUT_LEAD);
-      it.dx = Math.round((sp.bobAmp || 0) * Math.sin(2 * Math.PI * (t - sp.ev) / (sp.bobPeriod || 20)));
+      /* 出场改用变速剪辑的「切点前淡出」（原来是 t1 之后淡 0.9s 的原地叠化）；
+         入场给 0.15 下限，让新屏在切点那一刻就有东西可看 */
+      it.on = Math.max(fadeIn(t, sp.ev, STAGE_IN), cutFloor(t, sp.ev, screenIdxAt(sp.ev))) * screenExit(t, sp.out);
+      it.dx = Math.round((sp.bobAmp || 0) * Math.sin(2 * Math.PI * (t - sp.ev) / (sp.bobPeriod || 20))) + cutOffset(t);
       it.dy = Math.round((sp.bobAmp || 0) * 0.6 * Math.cos(2 * Math.PI * (t - sp.ev) / (sp.bobPeriod || 20)));
       /* 物品不再做缩放呼吸（循环缩放＝廉价表征，README §5.7）；「活着」交给 bobAmp 位移与光照。
          球簇的聚散仍写在 k 上——那是 A19/A31 的口径，不能挪。 */
@@ -617,7 +657,10 @@
     /* 附着标签的入场淡入要短于 0.5s：A31 从「出场 +0.5s」开始逐帧比对，
        那之后标签的明暗必须完全等于扫光公式（不能再叠一层入场淡入）。 */
     var fadeDur = p.attach ? 0.20 : PIECE_FADE;
-    var vis = fadeIn(t, p.start, fadeDur) * (p.attach ? 1 : fadeOut(t, (SCREENS[p.s] || {}).t1, OUT_LEAD));
+    /* 换页用变速剪辑：出场提前到切点前（screenExit），入场给 0.15 下限。
+       附着标签不加下限、也不单独淡出——它的明暗跟着物品的 on 走（A28/A31 口径）。 */
+    var vis = fadeIn(t, p.start, fadeDur) * (p.attach ? 1 : screenExit(t, (SCREENS[p.s] || {}).t1));
+    if (!p.attach) vis = Math.max(vis, cutFloor(t, p.start, p.s));
     var it = p.attach ? ITEMS[p.attach.item] : null;
     var dx = 0, dy = 0, k = 1;
     if (it) {
@@ -642,6 +685,9 @@
       dx += Math.sin(2 * Math.PI * (t - p.start) / jp + jseed) * rSize(1.6);
       dy += Math.cos(2 * Math.PI * (t - p.start) / (jp * 1.37) + jseed) * rSize(1.6);
     }
+    /* 换页位移：附着标签从 it.dx 里已经拿到了这个全局偏移，不能再加一遍
+       （加两遍＝相对物品偏移 230px，A19/A28 会当场判「图层割裂」）。 */
+    if (!p.attach) dx += cutOffset(t);
     el.style.transform = 'translate(' + Math.round(dx) + 'px,' + Math.round(dy + riseY + floatY) + 'px)';
     /* 数字弹入：只作用于 L0、L1（金属字已经是最亮处，不再叠缩放循环） */
     if (p.pop) {
@@ -655,7 +701,9 @@
     if (p.lv === 'L0' || p.lv === 'L1') {
       op = vis;
     } else {
-      var own = litFactor(rec.cx, rec.cy, L);
+      /* 自身光照要按**当前**位置取（静态中心 + 本帧位移 + 入场上浮），不能用静态测量中心：
+         换页位移可达 ±230px，用静态中心会让页面与 attach-check 的逐帧换算对不上（A31 差 0.04）。 */
+      var own = litFactor(rec.cx + dx, rec.cy + dy + riseY, L);
       var itemLight = it ? it.light * it.on : 0;
       var reach = Math.max(own, itemLight);
       var c = p.attach || { opMin:0.50, opMax:1.00 };
