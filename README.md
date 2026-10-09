@@ -437,6 +437,24 @@ P0 ①–⑦ 原文让它照约束改，再按 §7.4 的量测钩子自检。这
 `cairosvg` / Manim 那类依赖本机没验证过，验证过的只有 **Node ≥18 + 无头 Chromium + ffmpeg**；
 图片模型走 hypit 的 `gpt-image-2`（路由已用 `hypit plan` 验证通过）。
 
+### 7.6 seek 安全补充（HyperFrames 独立佐证）
+
+HyperFrames（同一套「HTML → 确定性视频」思路）把自己的硬约束写在
+`upstream/hyperframes/skills/hyperframes-animation/rules-index.md` 的 contract 段。
+与本 skill 的 P0 对照后，**重合的部分**（不用再论证）：只有一条**暂停的**时间轴、显式 from 状态、
+状态必须是时间轴时间的纯函数、禁止自动播放的 CSS animation、禁止可变累加器。
+
+它比 P0 ⑦ 多出来的三条，抄进来：
+
+1. **随机与时钟**：`Math.random()` / `Date.now()` **不许参与画面状态**。粒子、抖动这类「随机感」
+   只能**按元素索引导出**（`i` 的确定性函数）或初始化时抽一次种子固化进 `PIECES` ——
+   否则同一个 `t` 两次渲染不是同一张图，A1/A19/A28 全部失效。
+2. **群组错峰的总额**：同一批一起出场的元素，`个数 × 间隔 ≤ 约 0.5s` ——
+   超过就把「一批到达」读成了「一串陆续到达」，一个节拍散成好几拍。
+3. **动效只改 `transform` 与纯绘制属性**；`width/height/top/left` 不做补间（要用就换成
+   `scaleY` / 遮罩）。本 skill 是每帧**直接写值**、不是补间，所以不受影响 ——
+   但别因为「顺手」给动效元素挂上 CSS `transition`：它跑在浏览器时钟上，和 `t` 脱钩，seek 必闪。
+
 ---
 
 ## 8 渲染与导出规范
@@ -809,26 +827,41 @@ vibe-knowledge-video-skill/
 「每次设计都把 17 个都调用一遍」不可执行 —— 其中 6 个与本管线无关（见文末表），
 硬塞进上下文只会挤掉真正要看的东西。可执行的版本是下面这些。
 
-### 18.1 每次设计都做
-
-**跑一遍反模式自检**（约 10 秒，离线、不用 LLM、不用 API key）：
+### 18.1 反模式自检：每版跑一次，当分诊单看（**不是闸门**）
 
 ```powershell
-npx -y impeccable@latest detect <成片.html> --json
+cd templates/tools
+node anti-slop.mjs                                  # 扫模板；起本地服务 + 用 Edge 扫渲染后的页面
+node anti-slop.mjs --html <成片.html>                # 扫指定成片
+node anti-slop.mjs --file                           # 静态扫文件（快，但看不见 JS 渲染出来的东西）
 ```
 
-退出码 `0` = 无 primary finding，`2` = 有。它检查的是「AI 生成前端」的通用表征
-（Inter 满场、紫蓝渐变、卡片套卡片、圆角图标块…），正好补上 §4.6 手写禁止清单没覆盖的部分。
+底层是 `impeccable detect`（59 条确定性规则，离线、不用 LLM/API key）。封装脚本做了三件事：
+自动挑空闲端口起服务、用 `cdp.mjs` 探测到的 Edge/Chrome 当 `IMPECCABLE_BROWSER`、**把结果分成三桶**。
 
-**已知会命中本 skill 的故意签名，不要为了过检查把它们改掉**（2026-10-09 实测）：
+**必须走 URL 模式**：本 skill 的画面是 JS 逐帧写进 DOM 的，静态扫文件只看得到源里的 CSS
+（实测模板：文件模式 1 条、URL 模式 2 条）。
 
-| 目标 | 命中 | 对应本 skill 的哪条**故意**设计 |
-| --- | --- | --- |
-| `templates/shot-template.html` | `gradient-text` | §5.5 金属渐变字（金属字必须走 `background-clip:text`） |
-| `examples/control-illusion/control-illusion.html` | `dark-glow` | §4.4 棕金光晕（背景弱结构② ③） |
+**2026-10-09 实测（URL 模式）**
 
-两份都只命中这 1 条 —— 说明 §4.6 的禁止清单本身已经把这批片子守得很干净。豁免用
-`.impeccable/config.json` 的 `detector.ignoreRules`，或文件内 `<!-- impeccable-disable gradient-text -->`。
+| 目标 | 命中 | 待处理 | 转自有检查 | 故意签名 |
+| --- | --- | --- | --- | --- |
+| `templates/shot-template.html` | 2 | 0 | 0 | 2 |
+| `examples/control-illusion/control-illusion.html` | 43 | **0** | 2 | 41 |
+
+三桶的含义：
+
+- **故意签名（不改）**：`gradient-text`（§5.5 金属字）、`dark-glow` ×38 / `radial-spotlight-glow`
+  （§4.4 光晕）、`clipped-overflow-container`（裁切是遮罩手法）、`gpt-thin-border-wide-shadow`
+  （§10.4 描边加固）、`wide-tracking`（§5.3 就是 0.04/0.08em）。**为了过检查改这些是错的。**
+- **转本 skill 自有检查**：`content-hidden-at-rest`（片子里的文字本来就要等 `t` 才显示 → 用 A5
+  `coverage.mjs` 判）、`low-contrast`（它把扫描那一瞬的半透明入场态当成最终态 → 用 §5.5
+  关键词亮度验收判）。
+- **要看一眼**：剩下的。实测两部片子这条都是 **0**。
+
+**它面向的是「会交互的网页」，判据套到逐帧片子上会有分类错位** —— 上面 43 条里 41 条是它的
+正常检出一半、我们的正常做法一半。所以定位是**分诊单**：帮你发现「本来没打算做成那样」的东西，
+不产生通过/不通过。真正的闸门还是 A1–A31（§13）。
 
 ### 18.2 按需查（用到哪个翻哪个）
 
@@ -856,3 +889,56 @@ npx -y impeccable@latest detect <成片.html> --json
 Apache-2.0 / MIT 可以取用（保留声明）；**`remotion` 是 Remotion License 不是 OSI 许可**，
 公司规模超过阈值需付费；**`ClaraVerse` 是 AGPL-3.0**；**`roughdraft.js` 没有许可声明**——
 后三个都别把代码搬进要分发的产物里。
+
+---
+
+## 19 同题参照：HyperFrames `faceless-explainer` 的可借鉴项
+
+> 读的是 `upstream/hyperframes/skills/faceless-explainer/references/`（story-design / visual-design /
+> motion-language / cut-catalog）与 `skills/hyperframes-animation/`（rules / blueprints / transitions）。
+> 它是**同题不同解**：同一件事（HTML → 确定性视频），只是建立在 GSAP 生态上。
+> 下面只留搬得过来的；搬不动的写明为什么。
+
+### 19.1 动作词表（本 skill 版）
+
+他们的词表有二十多个动作，每个挂规则 id。**按本片的约束筛过之后**只剩这几个可用
+（GSAP 曲线、3D、打字机、回弹全部排除 —— 撞 §4.6 与 §5.4）：
+
+| 动作名 | 做什么 | 本 skill 里的出处 |
+| --- | --- | --- |
+| 描边生长 | 轮廓 / 图标 / 环按笔画自己画出来 | §4.1 轮廓生长、§4.3 图形先行 |
+| 数字计数 | 数字从旧值爬到新值，字号可随值一起变大 | §4.1「数字写入」、封面数字钩子 |
+| 簇→散开 | 元素从中心聚拢态展开到各自最终位置 | §4.1 金球聚拢 / 灰球弥散 |
+| 同位换手 | 同一中心点，旧件缩小淡出的同时新件到位 | 换页之外的同屏换件 |
+| 固定句换槽 | 一整句不动，只换其中的变量槽（数字 / 名称 / 日期） | §4.2 附着标签的稳定句 |
+| 扫光 | 一道光掠过当前重点 | §4.1 扫光、§5.4 扫光联动 |
+| 局部脉动 | 光点 / 球体一次局部提亮 | §4.1 光点每 2s 依次脉动 |
+| 细微抖动 | 保持静止时唯一合法的「活着」 | **新增**，见 19.3 |
+
+规则：**一个镜头里组合 2–4 个动作**（入场 → 逐个揭示 → 落定），不要全用上。
+
+### 19.2 动效信条里可以照抄的四句
+
+1. **平滑压倒回弹** —— 长尾减速是默认，回弹是「明确玩闹」的罕见例外。
+   （本 skill §5.4 已禁弹性曲线，方向一致。）
+2. **顺序揭示放在后段，不要在前 25% 倒完** —— 这是「像 PPT」与「像片子」的分界。
+   本 skill 没有旁白，所以对位的不是语音，而是**节拍表**：§4.3 已经要求
+   「主图形先登场 → 注释逐段出现 → 主标题最后锁定」，把「后 50%」当成量化口径用它。
+3. **宁可不给动效，也不给坏动效** —— 后半段的缓慢平移 / 推近会打乱视线，是负收益；
+   静止的一帧胜过被「呼吸」撑活的一帧。
+4. **内部的接缝要速度匹配** —— 不是静止叠化，而是切在速度峰值上、两侧同向同速。
+
+### 19.3 两处冲突，明确怎么处理
+
+| 冲突 | 他们的做法 | 本 skill 怎么办 |
+| --- | --- | --- |
+| **变速剪辑的位移量** | cut-the-curve 用 ±230px 的位移做场景接缝 | **不采纳整条** —— 撞 §4.6「位移 >40px 的转场」禁止。只取两个可用细节：① **模糊量随主体尺寸**（文字类 10px、整屏面 18–20px，且切点两侧数值必须相同）；② **淡出在行程的 25–30% 处就完成**，不等到出画 |
+| **「循环缩放当活着」是廉价手法** | 把 circular breathing 直接列为廉价表征，保持静止时应改用 subtle jitter | 本 skill 的金属字呼吸（0.96↔1.00）正中这条。但 §5.4 已经把它限到**全片 ≤3 处**、弹入 ≤1 处 —— **上限维持不动**，另补 `subtle jitter`（低幅位移抖动）作为「保持静止时更便宜的活着」，二者二选一，不要叠加 |
+
+### 19.4 蓝皮书索引当词表用
+
+`hyperframes-animation/blueprints/` 有 17 个成片级动作模板，命名本身就是一份镜头词表，
+排新片时可以直接拿来点菜（哪些能落进本 skill 的约束要逐条筛）：
+`dataviz-countup` · `kinetic-type-beats` · `comparison-split` · `camera-journey` ·
+`grid-card-assemble` · `fixed-anchor-cycle` · `overwhelm-surround` · `spatial-pan-stations` ·
+`constellation-hub` · `ticker-takeover` · `logo-assemble-lockup` · `panel-edit-live-sync` …

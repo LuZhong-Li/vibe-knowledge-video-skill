@@ -41,6 +41,7 @@
 | `narration.mjs` | （本片未采用）旁白流水线：TTS 到时长拟合到排布到压音混音，输出音轨 + 脚本 + SRT | `node narration.mjs --bed <bed.wav>` |
 | `cover-extract.mjs` / `cover-render.mjs` / `cover-check.mjs` | 封面：从成片抽素材，出 16:9 JPG/PNG + 缩略测试图，8 条《最终校验项》逐条给数 | 见文件头 |
 | `imgscan.mjs` | 把成品图打成字符图输出到终端（没有看图能力时用来「看」版面） | `node imgscan.mjs <图片> [列数=112]` |
+| `anti-slop.mjs` | §18.1 反模式分诊单：封装 `impeccable detect`（59 条确定性规则，离线），默认起服务扫 URL（看得见 JS 渲染出的元素），结果分三桶。需要联网首次拉取 `impeccable` | `node anti-slop.mjs [--html <成片.html>] [--file] [--json]` |
 
 ---
 
