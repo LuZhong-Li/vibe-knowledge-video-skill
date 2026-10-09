@@ -161,7 +161,7 @@
   function rFont(px){ return Math.round(px * kH() * 1000) / 1000; }   // 字号不取整（2K 下取整偏差 ~1%）
   function rSize(px){ return Math.round(px * kH() * 1000) / 1000; }
   var SAFE = { left:rx(.05), right:rx(.95), top:ry(.05), bottom:ry(.95) };
-  var STAGE_IN = 0.80, PIECE_FADE = 0.85, FLOAT_PERIOD = 14, BREATHE_PERIOD = 6.0, OUT_LEAD = 0.90;
+  var STAGE_IN = 0.80, PIECE_FADE = 0.85, FLOAT_PERIOD = 14, OUT_LEAD = 0.90;
 
   var textsRoot = document.getElementById('texts');
   var structRoot = document.getElementById('structures');
@@ -378,7 +378,9 @@
       it.on = fadeIn(t, sp.ev, STAGE_IN) * fadeOut(t, sp.out, OUT_LEAD);
       it.dx = Math.round((sp.bobAmp || 0) * Math.sin(2 * Math.PI * (t - sp.ev) / (sp.bobPeriod || 20)));
       it.dy = Math.round((sp.bobAmp || 0) * 0.6 * Math.cos(2 * Math.PI * (t - sp.ev) / (sp.bobPeriod || 20)));
-      it.k = 1 + 0.02 * Math.sin(2 * Math.PI * t / (sp.breathe || BREATHE_PERIOD));
+      /* 物品不再做缩放呼吸（循环缩放＝廉价表征，README §5.7）；「活着」交给 bobAmp 位移与光照。
+         球簇的聚散仍写在 k 上——那是 A19/A31 的口径，不能挪。 */
+      it.k = 1;
       /* 聚散：半径系数（金球聚拢 / 灰球弥散）—— 必须写进 k，
          因为「球簇平均半径」与「物品缩放」在体检里是同一个量（A19/A31 口径）。 */
       if (sp.gather) {
@@ -630,9 +632,18 @@
     scaler.style.filter = blur > 0.05 ? 'blur(' + blur.toFixed(2) + 'px)' : 'none';
     /* 悬浮漂移：极慢，制造「悬浮」而不是「贴纸」（附着标签不漂，保持与物品恒定距离） */
     var floatY = (p.attach ? 0 : Math.sin(2 * Math.PI * (t - p.start) / FLOAT_PERIOD) * rSize(6));
+    /* 保持静止时的「活着」＝细微抖动（README §5.7）：低幅位移 ≤1.6px、周期 3.6–4.8s，
+       种子由「屏号 + 出场时刻 + 字数」导出——确定性，同一个 t 永远同一张图。
+       旧版这里是金属字呼吸（0.90↔1.00 循环缩放），循环缩放是廉价表征，已取消。
+       附着标签一律不抖：A28 要求它与物品的相对距离恒定。 */
+    if (p.breathe && !p.attach) {
+      var jseed = (p.s * 13 + Math.round(p.start * 10) + p.t.length) % 97;
+      var jp = 3.6 + 1.2 * ((jseed % 5) / 4);
+      dx += Math.sin(2 * Math.PI * (t - p.start) / jp + jseed) * rSize(1.6);
+      dy += Math.cos(2 * Math.PI * (t - p.start) / (jp * 1.37) + jseed) * rSize(1.6);
+    }
     el.style.transform = 'translate(' + Math.round(dx) + 'px,' + Math.round(dy + riseY + floatY) + 'px)';
-    /* 金属字呼吸 / 数字弹入：只作用于 L0、L1 */
-    if (p.breathe) k *= 0.90 + 0.10 * (0.5 + 0.5 * Math.sin(2 * Math.PI * t / BREATHE_PERIOD));
+    /* 数字弹入：只作用于 L0、L1（金属字已经是最亮处，不再叠缩放循环） */
     if (p.pop) {
       var pu = clamp01((t - p.start) / 0.9);
       k *= pu < 0.5 ? lerp(1.00, 1.02, pu / 0.5) : lerp(1.02, 1.00, (pu - 0.5) / 0.5);
@@ -651,7 +662,6 @@
       lf = (c.opMin + (c.opMax - c.opMin) * clamp01((reach - 0.74) / 0.26)) * (it ? it.on : 1);
       if (isLast && p.attach) lf = Math.max(lf, 0.94);     // 末屏：金句页文字保持常亮
       op = lf * vis;
-      if (p.opBreathe) op *= 0.90 + 0.10 * (0.5 + 0.5 * Math.sin(2 * Math.PI * t / 12));
     }
     /* lf 必须同时写进「数据记录」和「DOM 属性 data-lf」：
        体检脚本逐帧读的是 DOM 上的 data-lf，用来跟你页面里的同一条公式对账（A31）。 */
