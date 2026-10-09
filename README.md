@@ -408,6 +408,35 @@ window.__structStarts(i)  /* 第 i 屏所有图形件的起始时刻 */
 window.__audioEvents()    /* {events, defs, maxConcurrent, bgm, bgmVol} */
 ```
 
+### 7.5 外部代码生成模型与替代管线（DeepSeek / Matplotlib / Manim / Remotion）
+
+判断标准只有一条：**产物是不是一份可 seek 的单文件 HTML**。
+是 → 谁来写都行；不是 → 它不在本 skill 的路径上。
+
+**可以用的**：让任何模型（DeepSeek 之类）帮你写**这一份 HTML**。指令里直接带上 §7.1 与 §7.2 的
+P0 ①–⑦ 原文让它照约束改，再按 §7.4 的量测钩子自检。这只是「谁来打字」的差别。
+
+**不能用的一种做法**：把片子做成**逐帧文件**（`frame_0001.svg` / `frame_0001.png` …）再 ffmpeg 拼。
+在本 skill 里它是净损失，理由不是审美：
+
+| 会失去什么 | 为什么 |
+| --- | --- |
+| `?t=45` 精确 seek（P0 ③） | 帧序列只有序号、没有时刻；改一个字要重出全部帧 |
+| A5 / A19 / A28 / A29 那批体检 | `coverage` / `narrative` / `attach-check` 全部经 `Runtime.evaluate` 读活 DOM 的 `.piece`、`window.__light()`、`window.__items()`（§7.4），帧序列上跑不了 |
+| 音画同源 | 音效事件表引用节拍表常量；帧序列里画面时刻是文件序号，事件表对不上 |
+| 零依赖（§7.1） | 每条替代管线都要再装一套环境 |
+
+**替代管线不是本 skill 的实现**：Matplotlib / Manim / Remotion 的产物是 mp4 或帧序列，拿不到量测钩子。
+真要用，只能当**上游素材生成器** —— 产出**一张图**或**一段独立 B-roll**，再喂进 HTML。
+注意单文件片子不内联 `<img>`（§6.1），所以这条只对**封面**或**外挂 B-roll 片段**成立。
+
+**想让模型直接出位图**：走 [assets-guide §8](assets-guide.md)（图片生成模型只做概念稿），
+不要让文本模型把绘图 Prompt 转述一遍再拼帧。
+
+三个照抄会出事的细节：示例里的 `ffmpeg -framerate 24` 在本 skill 是 **30fps**（§1），照抄会变速；
+`cairosvg` / Manim 那类依赖本机没验证过，验证过的只有 **Node ≥18 + 无头 Chromium + ffmpeg**；
+图片模型走 hypit 的 `gpt-image-2`（路由已用 `hypit plan` 验证通过）。
+
 ---
 
 ## 8 渲染与导出规范
@@ -768,4 +797,3 @@ vibe-knowledge-video-skill/
    整块金属数字）。06 全片 7.3% 是上限样本，再高就该怀疑「金色文字 >5 处」（§5.5）。
 6. **开场音轨可以复用**：01 与 05 的 0–10s 音轨逐样本相关度 **1.00**（同一段），
    而同窗口画面相关度只有 0.38 —— 复用片头音轨、每片重做画面，是这套系列的真实做法。
-

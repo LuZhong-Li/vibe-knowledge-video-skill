@@ -44,6 +44,9 @@ metadata:
 9. 图片生成模型（GPT Image2 一类）**只做概念稿**：不生成带文字/数字的图、不出成片帧、
    不做封面底图与内联 SVG（封面底图例外须过 [assets-guide.md](assets-guide.md) §8.5 三关）。
    画面里会动的东西一律自绘。
+10. 交付物是**一份可 seek 的单文件 HTML**（`?t=45` 能定位任意一帧），不是帧序列。
+    外部的代码生成模型（DeepSeek 等）可以帮你写这份 HTML，但别把「逐帧 SVG/PNG → ffmpeg」
+    或 Manim / Remotion 那条线套进来当主流程（[README.md](README.md) §7.5）。
 
 ## 关键数值（直接照用，除非有理由改）
 
