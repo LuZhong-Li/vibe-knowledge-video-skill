@@ -41,6 +41,9 @@
 | `narration.mjs` | （本片未采用）旁白流水线：TTS 到时长拟合到排布到压音混音，输出音轨 + 脚本 + SRT | `node narration.mjs --bed <bed.wav>` |
 | `cover-extract.mjs` / `cover-render.mjs` / `cover-check.mjs` | 封面：从成片抽素材，出 16:9 JPG/PNG + 缩略测试图，8 条《最终校验项》逐条给数 | 见文件头 |
 | `imgscan.mjs` | 把成品图打成字符图输出到终端（没有看图能力时用来「看」版面） | `node imgscan.mjs <图片> [列数=112]` |
+| `pixel-probe.mjs` | **取证**：直接读 ffmpeg 灰度原始帧给数 —— `lum` 逐帧平均亮度（找黑起幅）/ `diff` 逐帧差分（变化格数 + 包围盒，量"这段到底动不动"）/ `map` 单帧 24×18 字符图 + 上中下·左中右分区墨量 / `box` 任意矩形亮度 | `node pixel-probe.mjs diff <mp4> 2.5 13 2` ｜ `map <mp4> 47.4` ｜ `box <mp4> 8.6 770,925,1140,985` |
+| `box-probe.mjs` | **取证**（A36/A37）：逐时刻列可见文字盒 + **距边距离** + **线段穿字**（线段-矩形相交，盒内缩 2px 判）+ `#items` 图形件越界 | `node box-probe.mjs <html> 6,8.6,26.4,47.4`（`SHAPES=1` 连图形件盒一起列） |
+| `cover-plate.mjs` | 封面底片抽取（**无柱体方案**用的那个，替代 `cover-extract.mjs`）：只抽背景引擎层，粒子 ×dim、核心区不画粒子 | `node cover-plate.mjs --film <html> --cover <封面.html> --out <目录> --t 48.5 --dim 0.35` |
 | `anti-slop.mjs` | §18.1 反模式分诊单：封装 `impeccable detect`（59 条确定性规则，离线），默认起服务扫 URL（看得见 JS 渲染出的元素），结果分三桶。需要联网首次拉取 `impeccable` | `node anti-slop.mjs [--html <成片.html>] [--file] [--json]` |
 | `textbox-check.mjs` | **A32 文字盒**：横向溢出 / 换行 / 越界。横向溢出是阻断项——`background-clip:text` 的金属字在盒外没有 background 可裁，**末字会整块丢填充**；竖向溢出只作提示（L0 的 `line-height` < em 盒，常态） | `node textbox-check.mjs <html>` |
 | `readability-check.mjs` | **A33 文字可读性**：逐片算「阅读阶段最差分帧对比度」（片盒内线性亮度 p97 笔画 / p50 底色，取最小值 + 最差帧时刻）。只测阅读阶段，跳过入场淡入与屏尾淡出 | `node readability-check.mjs <html> <帧目录> [--stride 4] [--md <输出.md>]` |
