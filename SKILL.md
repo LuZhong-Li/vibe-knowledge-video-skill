@@ -88,7 +88,9 @@ metadata:
 - **[checklist.md](checklist.md)** —— 分阶段可勾选验收清单与复现命令。每次交付前逐项过。
 - **[assets-guide.md](assets-guide.md)** —— 色彩 token、字体分层、母题规格、金属渐变字、背景弱结构、音效素材检索词、封面素材抽法、**图片模型素材生产（§8：什么时候用/不用、提示词模板、为什么不要一键转矢量）**。
 - **[templates/](templates/)** —— 起步模板：`shot-template.html`（单文件骨架，含引擎/附着层/音效/调试参数，3 屏 20s 可直接跑）、`preview/`（模板自检真实出图）、`audio/`（占位音效与垫音）、`tools/`（`make-foley.mjs` 生成素材、`audio-render.mjs` 离线混音、`noise-floor.mjs` 噪检、`render.mjs`/`serve.mjs`/`cdp.mjs` 逐帧渲染与本地预览、`smoke-check.mjs` 通用冒烟，以及 A1–A37 全套体检脚本；**文字专项**：`textbox-check.mjs` 文字盒截断 / `readability-check.mjs` 最差分帧对比度 / `ink-bands.mjs` 缺字自证 / `measure-motion.mjs` 动帧口径对齐；**取证专项**：`pixel-probe.mjs`（亮度/差分/墨量/任意矩形，四个模式）/ `box-probe.mjs`（文字盒·贴边·引线穿字·图形越界））。**换项目时先读 `templates/tools/README.md` 第 3 节的常量替换表。**
-- **[examples/control-illusion/](examples/control-illusion/)** —— 完整样例：成片 HTML、四份设计与规范文档、七屏静帧、节拍表、文案表、封面工程、发布文案。**新项目先照它改，不要从零发明结构。**
+- **[examples/](examples/)** —— 两个完整样例，**新项目先照它们改，不要从零发明结构**：
+  [`examples/control-illusion/`](examples/control-illusion/)（第一期：成片 HTML、四份设计与规范文档、七屏静帧、节拍表、文案表、封面工程、发布文案）；
+  [`examples/confirmation-bias/`](examples/confirmation-bias/)（第三期：互动式八幕、节拍表 + 音效事件表原样导出、八屏静帧、封面工程，以及 `docs/06-外部评审核验.md` —— 外部模型评审原文 + 逐条核验矩阵）。
 
 ## 三条流程教训
 

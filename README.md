@@ -888,7 +888,9 @@ vibe-knowledge-video-skill/
 │   ├─ preview/             # 模板自检时真实导出的三屏静帧
 │   ├─ audio/               # 占位音效（5 个短触发 + 静音位 + 氛围垫音）
 │   └─ tools/               # 渲染 / 混音 / 噪检 / 全套体检脚本（见 tools/README.md）
-└─ examples/control-illusion/   # 完整样例工程
+└─ examples/                    # 完整样例工程（两期，合起来看差异最清楚）
+    ├─ control-illusion/        # 第一期《控制错觉》：七幕 / 128s 未剪版 → 123.5s（含封面工程）
+    └─ confirmation-bias/       # 第三期《确认偏误》：互动式八幕 / 140s / 外部评审核验全留痕
 ```
 
 > `templates/tools/` 是本项目 `tools/` 的原样拷贝（含各脚本需替换的工程常量说明），
@@ -1130,9 +1132,8 @@ Apache-2.0 / MIT 可以取用（保留声明）；**`remotion` 是 Remotion Lice
 > 母题与第二期互补：那边是样本被**外界**筛掉（空缺），这边是大脑**自己**筛证据（一组亮、一组暗）。
 > 本节只写这一期新增或被修正的规范，其余以 §1–§20 为准。
 >
-> 工程与全部证据留在 `vibe知识鉴赏大赛/确认偏误/`（成片 HTML、四份文档、`qa/` 逐条体检输出、
-> `qa/doubao-review/豆包评审-核验报告.md` 原始评审 + 逐条核验表）。**没有收进 `examples/`**：
-> 体积大，哪天需要完整样例再导出（`examples/control-illusion/` 仍是唯一完整样例）。
+> 完整样例**已导出**：[`examples/confirmation-bias/`](examples/confirmation-bias/)（成片 HTML、四份文档 +
+> `docs/06-外部评审核验.md`、节拍表、文案表、八屏静帧、封面工程）。视频与音轨 WAV 不入库（按节拍表 §4 可复现）。
 
 ### 21.1 这一期固化的六条增量规范
 

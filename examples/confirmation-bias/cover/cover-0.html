@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>确认偏误 · 封面（「一半」款）</title>
+<!--
+  ============================================================
+  封面方案：「一半」款（对应 04-设计文档.md §8）
+  Layer1 背景板  从成片抽的 plate-bg.png（S3 t=48.8s 的背景引擎层，粒子 ×0.35，核心区不画粒子）
+  Layer2 视觉锚点 金色「一半」340px = 主标题的 2.0 倍，与正片同一份 .metal 材质现渲染
+  Layer3 文字层  VIBE知识大赏 / 确认偏误 / 同一份材料，两边各只读进一半 / #确认偏误
+  安全区：左右 96 / 上 54 / 核心区下沿 972（底部 10% 不放核心文字图形）
+  调试：?grid=1 显示安全框与核心区；?plate=0 关掉背景板看纯色底
+  ============================================================
+-->
+<style>
+  :root{
+    --bg-char:#0A0A0A;
+    --ink:#F5F1E8; --ink-2:rgba(245,241,232,.62); --ink-3:rgba(245,241,232,.30);
+    --gold-hi:#D7B979; --gold:#B8944A; --glow:#6B4A1A;
+    --serif:"Source Han Serif SC","Noto Serif SC","Songti SC","STSong","SimSun","Times New Roman",serif;
+    --sans:"Source Han Sans SC","Noto Sans SC","PingFang SC","HarmonyOS Sans SC","Microsoft YaHei UI","Microsoft YaHei","Segoe UI",sans-serif;
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ width:100%; height:100%; background:#000; overflow:hidden; }
+  #viewport{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:#000; }
+  #stage{ position:absolute; left:50%; top:50%; width:1920px; height:1080px;
+          transform-origin:center center; transform:translate(-50%,-50%) scale(1);
+          overflow:hidden; background:var(--bg-char); }
+  #plate{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+  #footfade{ position:absolute; left:0; right:0; bottom:0; height:210px; pointer-events:none;
+             background:linear-gradient(180deg, rgba(10,10,10,0) 0%, rgba(10,10,10,.55) 62%, rgba(10,10,10,.80) 100%); }
+  .piece{ position:absolute; font-weight:400; white-space:nowrap; }
+  .metal{
+    background-image:linear-gradient(176deg,#FFF6DE 0%,#F4E1B2 20%,#EFDCAF 40%,
+                                     #FFFBE9 58%,#EBD5A4 78%,#F6E7C0 100%);
+    background-repeat:no-repeat; background-size:100% 200%;
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    -webkit-text-stroke:.6px rgba(74,48,12,.28);
+    filter:drop-shadow(0 8px 30px rgba(107,74,26,.42));
+  }
+  #grid{ position:absolute; inset:0; display:none; pointer-events:none; }
+  #grid .safe{ position:absolute; left:96px; right:96px; top:54px; bottom:108px; border:1px dashed rgba(215,185,121,.45); }
+  #grid .core{ position:absolute; left:0; right:0; top:972px; bottom:0; background:rgba(215,185,121,.06); }
+</style>
+</head>
+<body>
+<div id="viewport">
+  <div id="stage">
+    <img id="plate" src="plate-bg.png" alt="" />
+    <div id="footfade"></div>
+    <div class="piece" id="ip"></div>
+    <div class="piece metal" id="title"></div>
+    <div class="piece" id="sub"></div>
+    <div class="piece metal" id="zero"></div>
+    <div class="piece" id="tag"></div>
+    <div id="grid"><div class="safe"></div><div class="core"></div></div>
+  </div>
+</div>
+
+<script id="coverLayout" type="application/json">
+{
+  "stage": { "w": 1920, "h": 1080 },
+  "safe": { "left": 96, "right": 1824, "top": 54, "coreBottom": 972 },
+  "assets": { "plate": "plate-bg.png" },
+  "particleDim": 0.35,
+  "pieces": [
+    { "id": "ip",    "t": "VIBE知识大赏",             "x": 96,  "y": 62,  "fs": 34,  "ls": ".30em",
+      "color": "rgba(245,241,232,.42)", "font": "serif", "align": "left" },
+    { "id": "title", "t": "确认偏误",                 "cx": 960, "y": 150, "fs": 168, "weight": 600,
+      "ls": ".06em", "font": "sans", "align": "center", "metal": true, "metalPos": "46%", "inkDx": 15 },
+    { "id": "sub",   "t": "同一份材料，你只收下了一半", "cx": 960, "y": 404, "fs": 46,  "weight": 400,
+      "ls": ".10em", "color": "rgba(245,241,232,.78)", "font": "sans", "align": "center", "inkDx": 6 },
+    { "id": "zero",  "t": "一半",                     "cx": 960, "cy": 700, "fs": 340, "weight": 600,
+      "ls": ".02em", "font": "serif", "align": "center", "metal": true, "metalPos": "50%", "inkDx": 6 },
+    { "id": "tag",   "t": "#确认偏误",                "right": 96, "y": 872, "fs": 30, "ls": ".10em",
+      "color": "rgba(245,241,232,.42)", "font": "serif", "align": "right" }
+  ],
+  "coreBoxes": [
+    { "id": "titleBand",  "x": 400, "y": 90,  "w": 1120, "h": 360 },
+    { "id": "anchorHalf", "x": 560, "y": 470, "w": 800,  "h": 450 }
+  ]
+}
+</script>
+
+<script>
+(function () {
+  'use strict';
+  var P0 = new URLSearchParams(location.search);
+  if (P0.get('grid') === '1') document.getElementById('grid').style.display = 'block';
+  if (P0.get('plate') === '0') document.getElementById('plate').style.display = 'none';
+
+  var L = JSON.parse(document.getElementById('coverLayout').textContent);
+
+  /* 版面表 → DOM：所有坐标都是画布绝对 px，没有 vw/vh（与正片同一条硬约束） */
+  L.pieces.forEach(function(p){
+    var el = document.getElementById(p.id);
+    if (!el) return;
+    el.textContent = p.t;
+    el.style.fontFamily = (p.font === 'sans') ? 'var(--sans)' : 'var(--serif)';
+    el.style.fontSize = p.fs + 'px';
+    el.style.fontWeight = p.weight || 400;
+    el.style.letterSpacing = p.ls || '0';
+    el.style.color = p.color || 'var(--ink)';
+    el.style.textAlign = p.align || 'left';
+    if (p.metal) el.style.backgroundPosition = '50% ' + (p.metalPos || '50%');
+    /* 落位：cx/cy 走"全画布盒 + 居中 + translate 校正"，x/y/right 直接绝对定位。
+       中文字形左右留白不对称，按盒子居中会歪，所以再叠一层 inkDx 标定（由 cover-check 量出来回填）。 */
+    var tf = [];
+    if (p.cx != null) {
+      el.style.left = '0px'; el.style.width = L.stage.w + 'px';
+      tf.push('translateX(' + (p.cx - L.stage.w / 2 + (p.inkDx || 0)) + 'px)');
+    }
+    if (p.cy != null) {
+      el.style.top = '0px'; el.style.height = L.stage.h + 'px';
+      el.style.display = 'flex'; el.style.alignItems = 'center'; el.style.justifyContent = 'center';
+      tf.push('translateY(' + (p.cy - L.stage.h / 2) + 'px)');
+    }
+    if (p.x != null) el.style.left = p.x + 'px';
+    if (p.right != null) el.style.right = p.right + 'px';
+    if (p.y != null) el.style.top = p.y + 'px';
+    if (tf.length) el.style.transform = tf.join(' ');
+  });
+
+  function inkBoxOf(el){
+    var r = el.getBoundingClientRect();
+    var st = document.getElementById('stage').getBoundingClientRect();
+    return { x: Math.round(r.left - st.left), y: Math.round(r.top - st.top),
+             w: Math.round(r.width), h: Math.round(r.height) };
+  }
+  /* 居中片：按实际墨迹盒回写一个左偏移，让视觉重心真的落在 cx 上 */
+  var inkDx = {};
+  L.pieces.forEach(function(p){
+    if (p.cx == null) return;
+    var el = document.getElementById(p.id);
+    var box = inkBoxOf(el);
+    var dx = Math.round(p.cx - (box.x + box.w / 2));
+    el.style.left = (dx) + 'px'; el.style.width = L.stage.w + 'px';
+    inkDx[p.id] = dx;
+  });
+  L.inkDx = inkDx;
+
+  window.__cover = function(){
+    var out = { stage: L.stage, inkDx: inkDx, pieces: {} };
+    L.pieces.forEach(function(p){ out.pieces[p.id] = inkBoxOf(document.getElementById(p.id)); });
+    return out;
+  };
+  window.__ready = (function(){
+    var img = document.getElementById('plate');
+    var p1 = (img.complete ? Promise.resolve() : new Promise(function(r){ img.onload = img.onerror = r; }));
+    var p2 = (document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve();
+    return Promise.all([p1, p2]).then(function(){ return true; });
+  })();
+})();
+</script>
+</body>
+</html>

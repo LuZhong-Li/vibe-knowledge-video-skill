@@ -1,0 +1,2083 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>确认偏误 · Vibe知识大赏（八幕 / 140s / 无旁白）</title>
+<!--
+  ============================================================
+  确认偏误 · 第三期 · 八幕全片（0–140s / 4200 帧 @30fps）
+  依据：00-文字稿.md · 04-设计文档.md · 05-实现方案.md
+  母题：点阵 + 筛选（金点 = 留下的证据，灰圈 = 被滤掉的证据）
+  与《幸存者偏差》互补：那里是样本被外界筛掉（空缺），这里是大脑自己筛证据（滤网）
+
+  P0 硬约束（不可妥协）：
+    ① 字号与坐标全部画布绝对 px，禁用 vw/vh/clamp
+    ② 位移入场与缩放入场分在内外两层元素上
+    ③ 所有状态由 t 计算（?t=45 可定位任意一帧）；关键字动画不用自动播放的 CSS animation
+    ④ 大字字距 .04em / 小字 .08em
+    ⑤ background-clip:text 的元素禁用 text-shadow
+    ⑥ 文字位移取整像素
+    ⑦ 循环动画带时间常数断言（console.warn 计入失败）
+
+  调试：?t=48 定位　?rate=0.5 半速　?debug=1 时间码　?sfx=0 静音　?cw=2560&ch=1440 出 2K
+  ============================================================
+-->
+<style>
+  :root{
+    --bg-deep:#0D0D0E; --bg-char:#17140F;
+    --ink:#F5F1E8; --ink-2:rgba(245,241,232,.62); --ink-3:rgba(245,241,232,.42);
+    --gold-hi:#D7B979; --gold:#B8944A; --gold-line:#8A7655; --glow:#6B4A1A;
+    --safe-x:96px; --safe-top:54px; --safe-bottom:54px; --max-w:845px;
+    --fs-l0:160px; --fs-l1:96px; --fs-l2:60px; --fs-l3:52px; --fs-l4:28px;
+    --fs-kicker:26px; --fs-caption:28px; --fs-idx:24px; --tag-dot:9px;
+    --serif:"Source Han Serif SC","Noto Serif SC","Songti SC","STSong","SimSun","Times New Roman",serif;
+    --kai:"KaiTi","STKaiti","Kaiti SC","Songti SC","SimSun",serif;
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ width:100%; height:100%; background:#000; overflow:hidden; cursor:none;
+             -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+  #viewport{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:#000; }
+  #stage{
+    position:absolute; left:50%; top:50%; width:1920px; height:1080px;
+    transform-origin:center center; transform:translate(-50%,-50%) scale(1);
+    overflow:hidden;
+    background:
+      radial-gradient(120% 70% at 74% 32%, #211A12 0%, rgba(23,20,15,0) 58%),
+      linear-gradient(90deg, rgba(255,215,102,.05) 0%, rgba(255,215,102,0) 42%, rgba(255,215,102,.07) 58%, rgba(255,215,102,0) 100%),
+      linear-gradient(180deg,#121110 0%,#0D0D0E 55%,#080808 100%);
+  }
+  #bg,#grain{ position:absolute; inset:0; width:100%; height:100%; display:block; z-index:0; }
+  /* AI 底片层（方案 2）：位于背景之上、颗粒与暗角之下；默认隐藏，只有 ?ai=1 时才参与渲染 */
+    /* v3.5：AI 背景肌理（默认关闭）。原先没有 z-index，会被 z-index:0 的 #bg 盖住根本看不见；
+       给 2 —— 压在底(0)/颗粒(1)之上、叙事图形 #structures(3) 与文字 #texts(4) 之下，
+       层级上物理隔离，肌理永远不可能遮住符号或文字。 */
+    #aiLayer{ position:absolute; inset:0; width:100%; height:100%; display:none; z-index:2; }
+  #grain{ mix-blend-mode:overlay; opacity:.5; z-index:1; }
+  #vignette{
+    position:absolute; inset:0; pointer-events:none; z-index:2;
+    background:
+      radial-gradient(72% 52% at 50% 44%, rgba(0,0,0,0) 40%, rgba(0,0,0,.55) 100%),
+      linear-gradient(180deg, rgba(0,0,0,.34) 0%, rgba(0,0,0,0) 20%, rgba(0,0,0,0) 76%, rgba(0,0,0,.46) 100%);
+  }
+  .layer{ position:absolute; inset:0; }
+  #structures{ z-index:3; }
+  #texts{ z-index:4; }
+  #kicker{
+    position:absolute; top:var(--safe-top); left:var(--safe-x); right:var(--safe-x);
+    display:flex; justify-content:space-between; align-items:baseline; z-index:7;
+    font-family:var(--serif); font-size:var(--fs-kicker); letter-spacing:.30em;
+    color:var(--ink-3); opacity:0;
+  }
+  #caption{
+    position:absolute; left:var(--safe-x); right:var(--safe-x); bottom:var(--safe-bottom);
+    display:flex; justify-content:space-between; align-items:flex-end; z-index:7;
+    font-family:var(--serif); font-size:var(--fs-caption); letter-spacing:.10em;
+    color:var(--ink-3); opacity:0;
+  }
+  #caption .idx{ font-size:var(--fs-idx); letter-spacing:.24em; }
+  #progress{ position:absolute; left:0; right:0; bottom:0; height:3px; background:rgba(255,255,255,.05); z-index:7; }
+  #progress i{ display:block; height:100%; width:0%;
+    background:linear-gradient(90deg, rgba(184,148,74,.42), rgba(184,148,74,.10)); }
+  #debug{
+    position:absolute; right:12px; bottom:12px; z-index:9; display:none;
+    font:14px/1.5 ui-monospace,Consolas,monospace; color:rgba(245,241,232,.55);
+    background:rgba(0,0,0,.45); padding:4px 8px; border-radius:4px;
+  }
+  .piece{
+    position:absolute; font-family:var(--serif); color:var(--ink); opacity:0;
+    white-space:normal; max-width:var(--max-w); will-change:transform,opacity,filter;
+    /* v2.2 可读性：四向极细黑描边（模拟外描边），扫光/光晕扫过文字时轮廓不被吃掉。
+       模糊 2px、黑度 .85 —— 到 3px 以上会变卡通。金属字另走 .metal（禁用本阴影） */
+    text-shadow:
+      1px 1px 2px rgba(0,0,0,.85),
+      -1px -1px 2px rgba(0,0,0,.85),
+      1px -1px 2px rgba(0,0,0,.85),
+      -1px 1px 2px rgba(0,0,0,.85);
+  }
+  /* v2.2 底层隔离：只给「贴在动态图形上」的附着标签包一层本地薄黑衬底（不是全屏黑底） */
+  .piece.pad{ background:rgba(0,0,0,.34); border-radius:6px; padding:2px 8px; }
+  .piece.nowrap{ white-space:nowrap; }
+  .piece.vert{ writing-mode:vertical-rl; text-orientation:upright; }
+  .piece.kai{ font-family:var(--kai); letter-spacing:.14em; }
+  .piece.tag{ display:flex; align-items:center; gap:16px; color:rgba(245,241,232,.78); }
+  .piece.tag i{ flex:0 0 auto; width:var(--tag-dot); height:var(--tag-dot);
+                border-radius:50%; background:rgba(215,185,121,.75); }
+  .piece .sc{ display:inline-block; transform-origin:50% 50%; }
+  .lv-l0{ font-size:var(--fs-l0); line-height:1.10; font-weight:600; letter-spacing:.02em; }
+  .lv-l1{ font-size:var(--fs-l1); line-height:1.40; font-weight:600; letter-spacing:.04em; }
+  .lv-l2{ font-size:var(--fs-l2); line-height:1.55; font-weight:500; letter-spacing:.05em; }
+  /* v2.2 字重分层：L3 是数量最多的正文片，小幅加粗到 500；L4 到 450；标题保持 600（不要全线 Heavy） */
+  .lv-l3{ font-size:var(--fs-l3); line-height:1.55; font-weight:500; letter-spacing:.08em; }
+  .lv-l4{ font-size:var(--fs-l4); line-height:1.60; font-weight:450; letter-spacing:.10em; color:var(--ink-3); }
+  .metal{
+    /* 金属材质：只给 4 处关键金句（加固机翼？/ 0 / 幸存者偏差 / 收尾金句）。
+       2026-10-09 按最终分层把中段调到更暖的金 #E6C574 —— 注意：与第一期《控制错觉》的
+       材质相比中段更暖一档（第一期偏近白），两片并排看会略有差异，属于本次刻意的金句强调。 */
+    background:linear-gradient(176deg,#FFF7E2 0%,#F6E6BE 20%,#E6C574 40%,
+                              #FFFBE9 58%,#E3C97F 78%,#F4E3B0 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    -webkit-text-stroke:.8px rgba(74,48,12,.32);
+    /* v2.2：金属字不加 text-shadow（P0⑤：background-clip:text 会被压暗），
+       改第二层 drop-shadow 做 6px 暖金内层发光，在粒子/汇聚光下保住轮廓 */
+    /* v3.3：外发光加强（保留 2 层 —— 第 3 层会再叠一次滤镜通道，逐帧渲染明显变慢，
+       而过曝与亮度已由 keyword-check 兜住：峰值仍 250、亮部 13–28%） */
+    filter:drop-shadow(0 10px 38px rgba(107,74,26,.52)) drop-shadow(0 0 10px rgba(255,215,100,.62));
+    text-shadow:none;   /* P0⑤：background-clip:text 禁 text-shadow（会压暗金属字） */
+  }
+  /* ---------- 图形件（本片母题：飞机的线稿 / 弹孔 / 空缺） ---------- */
+  #items{ position:absolute; left:0; top:0; width:100%; height:100%; }
+  .p-line{ fill:none; stroke:rgba(138,118,85,.55); stroke-width:1.5;
+           stroke-linecap:round; stroke-linejoin:round; }
+  .p-line.hot{ stroke:rgba(184,148,74,.85); }
+  .p-hole{ fill:rgba(184,148,74,.92); }
+  .p-lost{ fill:none; stroke:rgba(245,241,232,.30); stroke-width:1;
+           stroke-linecap:round; stroke-linejoin:round; }
+  .p-blank{ fill:none; stroke:rgba(245,241,232,.22); stroke-width:1.5; stroke-dasharray:14 12; }
+  .p-hud{ fill:none; stroke:rgba(138,118,85,.45); stroke-width:1; }
+  .p-lead{ stroke:rgba(184,148,74,.50); stroke-width:1.5; fill:none; }
+  .p-glow{ fill:rgba(107,74,26,.085); }
+  /* 第三期母题：材料卡 / 筛网 / 两组证据点 */
+  /* 第三版视觉系统：主动画元素统一高亮金 / 选中态金 / 反面暗金，描边加厚 2–3 倍 */
+  .p-card{ fill:none; stroke:rgba(255,215,102,.65); stroke-width:3.4;
+           stroke-linecap:round; stroke-linejoin:round; }
+  .p-sieve{ fill:none; stroke:rgba(255,215,102,.90); stroke-width:4.4;
+            stroke-linecap:round; stroke-linejoin:round; }
+  .p-sieve-mesh{ fill:none; stroke:rgba(255,215,102,.45); stroke-width:2; }
+  .p-dot-halo{ fill:none; stroke-width:1.2; }
+  .p-dot-deep{ fill:rgba(200,169,100,1); }      /* 深金：支持死刑的一组证据 */
+  .p-dot-pale{ fill:rgba(232,207,146,.62); }    /* 浅金：反对死刑的一组证据 */
+  .p-dot-faint{ fill:none; stroke:rgba(245,241,232,.30); stroke-width:1; }  /* 观点卡里的证据位 */
+</style>
+</head>
+<body>
+<div id="viewport">
+  <div id="stage">
+    <canvas id="bg"></canvas>
+    <img id="aiLayer" alt="" />
+    <canvas id="grain"></canvas>
+    <div id="vignette"></div>
+    <div id="structures" class="layer"></div>
+    <div id="texts" class="layer"></div>
+    <div id="kicker"><span>VIBE知识大赏</span><span class="note"></span></div>
+    <div id="caption"><span class="idx"></span><span class="note"></span></div>
+    <div id="progress"><i></i></div>
+    <div id="debug"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  /* ============================================================
+     0 · 画布与坐标系（切 2K 只改这里 / 或用 ?cw=&ch=）
+     ============================================================ */
+  var P0 = new URLSearchParams(location.search);
+  var CANVAS = { w: parseFloat(P0.get('cw') || '1920'), h: parseFloat(P0.get('ch') || '1080') };
+  if (!isFinite(CANVAS.w) || CANVAS.w < 640) CANVAS.w = 1920;
+  if (!isFinite(CANVAS.h) || CANVAS.h < 360) CANVAS.h = 1080;
+  var W = CANVAS.w, H = CANVAS.h, TOTAL = 140;         // M2 全片：八幕 140s
+  function rx(r){ return Math.round(r * W); }
+  function ry(r){ return Math.round(r * H); }
+  function kH(){ return H / 1080; }
+  function rFont(px){ return Math.round(px * kH() * 1000) / 1000; }
+  function rSize(px){ return Math.round(px * kH() * 1000) / 1000; }
+  var SAFE = { left:rx(.05), right:rx(.95), top:ry(.05), bottom:ry(.95) };
+  var STAGE_IN = 0.80, PIECE_FADE = 0.85, FLOAT_PERIOD = 14, BREATHE_PERIOD = 6.0, OUT_LEAD = 0.90;
+
+  var textsRoot = document.getElementById('texts');
+  var structRoot = document.getElementById('structures');
+  var stageEl = document.getElementById('stage');
+  var kickerEl = document.getElementById('kicker');
+  var captionEl = document.getElementById('caption');
+  var capNote = captionEl.querySelector('.note');
+  var capIdx = captionEl.querySelector('.idx');
+  var kickNote = kickerEl.querySelector('.note');
+  var progressBar = document.querySelector('#progress i');
+  var debugEl = document.getElementById('debug');
+  var params = P0;
+  if (params.get('debug') === '1') debugEl.style.display = 'block';
+
+  (function applyCanvas(){
+    var st = document.documentElement.style;
+    st.setProperty('--safe-x', rx(.05) + 'px');
+    st.setProperty('--safe-top', ry(.05) + 'px');
+    st.setProperty('--safe-bottom', ry(.05) + 'px');
+    st.setProperty('--max-w', rx(.44) + 'px');
+    [['--fs-l0',160],['--fs-l1',96],['--fs-l2',60],['--fs-l3',52],['--fs-l4',28],
+     ['--fs-kicker',26],['--fs-caption',28],['--fs-idx',24]]
+      .forEach(function(kv){ st.setProperty(kv[0], rFont(kv[1]) + 'px'); });
+    st.setProperty('--tag-dot', rSize(9) + 'px');
+    stageEl.style.width = W + 'px'; stageEl.style.height = H + 'px';
+    var c1 = document.getElementById('bg'), c2 = document.getElementById('grain');
+    c1.width = W; c1.height = H; c2.width = W; c2.height = H;
+  })();
+
+  /* ============================================================
+     1 · 通用工具
+     ============================================================ */
+  function clamp01(v){ return v < 0 ? 0 : v > 1 ? 1 : v; }
+  function lerp(a, b, x){ return a + (b - a) * x; }
+  function easeOutCubic(x){ return 1 - Math.pow(1 - x, 3); }
+  function smoothstep(x){ x = clamp01(x); return x * x * (3 - 2 * x); }
+  function fadeIn(t, at, dur){ return smoothstep((t - at) / (dur || PIECE_FADE)); }
+  function fadeOut(t, at, dur){ return 1 - smoothstep((t - at) / (dur || OUT_LEAD)); }
+  function mulberry32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  function mk(tag, cls, style){
+    var el = document.createElement(tag);
+    if (cls) el.className = cls;
+    if (style) for (var k in style) el.style[k] = style[k];
+    return el;
+  }
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  function smk(tag, attrs){
+    var el = document.createElementNS(SVGNS, tag);
+    if (attrs) for (var k in attrs) el.setAttribute(k, attrs[k]);
+    return el;
+  }
+
+  /* ============================================================
+     2 · 分幕网格 + 节拍表（画面 / 光影 / 音效三处只读这一张表）
+     ============================================================ */
+  var SCREENS = [
+    { id:'s1', label:'先选立场', note:'1979 · 两组立场相反的人',        t0:0,   t1:17,  bg:{ rays:0.55, glow:0.80 } },
+    { id:'s2', label:'证据选择', note:'同一份研究材料 · 正反证据混杂',    t0:17,  t1:29,  bg:{ rays:0.40, glow:0.72 } },
+    { id:'s3', label:'筛选揭示', note:'LORD · ROSS · LEPPER 1979',      t0:29,  t1:54,  bg:{ rays:0.46, glow:0.80 } },
+    { id:'s4', label:'命名卡',   note:'CONFIRMATION BIAS',               t0:54,  t1:71,  bg:{ rays:0.40, glow:0.72 } },
+    { id:'s5', label:'机制展开', note:'筛子是谁装的',                     t0:71,  t1:86,  bg:{ rays:0.30, glow:0.62 } },
+    { id:'s6', label:'生活迁移', note:'生活里的那只筛子',                  t0:86,  t1:108, bg:{ rays:0.44, glow:0.76 } },
+    { id:'s7', label:'大脑处理', note:'双重标准：吸收支持 · 弹开反对',      t0:108, t1:126, bg:{ rays:0.28, glow:0.60 } },
+    { id:'s8', label:'自检收束', note:'带走一个提问',                     t0:126, t1:140, bg:{ rays:0.20, glow:0.55 } }
+  ];
+  /* S1 先选立场（v3.5 拍板版）：
+     0–2.3s 两张卡描边生长 + 卡内文字 → 2.1s 底部提问 → 2.5–6.7s 光球**两次往返**（每段 0.70s）
+     → 7.5s 起停在中间偏左轻微呼吸（两侧卡片同步微弱呼吸，不再偏向任何一侧）
+     → 10.5s 过渡提示入场 → 13.2s 起过渡提示与两张卡一起收缩淡出 → 15.0s 交干净画布给 S2。
+     低动态窗（摆球段）从旧版的 10.2s 压到 4.2s，含停住留白共 6.0s（2.5–8.5s）。 */
+  /* note 保持 2.40s（拍板表里写的是 2.0s）：2.0s 会把底部提示插到两张卡的标签（2.15s）之前，
+     柔光来不及在 0.6s 内从画面底部飘到右上，A17「扫光聚焦」会挂两处（实测 648px / 805px > 光半径 640px）。
+     2.40s（=旧值）是这台引擎能过的下限，只比拍板表晚 0.4 秒。 */
+  var S1 = { cardL:0.20, cardR:1.20, grow:1.10, tagL:0.80, tagR:1.80, note:2.40, noteOut:9.60,
+             sel0:2.50, sel1:6.70, restX:-0.30,
+             bridge:10.50, bridgeOut:13.20, cardsOut:13.20, cardsDur:1.80, out:17.00 };
+  /* S2 证据选择：顶部标题 → 17.4–22.4 只有「搜索环」的空画布（心理间隙）
+     → 22.5s 起证据 Group 逐个弹出 → 26.2s 提示 → 28.2s 焦点框扫描 → 29.0s 进 S3 */
+  var S2 = { search:17.10, title:17.20, corner:17.60, dot0:22.50, dotStep:0.43,
+             note:26.20, scan0:28.20, scan1:29.00, out:29.00 };
+  /* S3 筛选揭示：筛网落下 → 一组亮一组暗 → 左右分流（≤11px/s）→ 「一半」（★47.4） */
+  var S3 = { sieve:29.00, sel0:33.00, dim0:35.00, dim1:38.00,
+             sort0:32.80, sort1:47.00, sortSpeed:11.0,
+             tagL:41.00, tagR:43.00, half:47.40, note:48.80, name:50.60, src:51.90, out:54.00 };
+  /* S4 命名卡 54–71s ★重音②67.5 */
+  var S4 = { matrix:54.60, tag1:56.50, tag2:58.00, frame:60.00, side:62.00,
+             disc:64.50, title:67.50, sub:68.60, hook:69.30, out:71.00 };
+  /* S5 机制展开：两段说明 → 四节点流程链 → 方向光带 → 两行说明 */
+  var S5 = { flow:72.60, left:73.20, right:75.20, node0:77.00, nodeStep:1.40,
+             note:83.30, note2:84.00, out:86.00 };
+  var S6 = { main:87.50, A:92.00, B:98.00, C:103.00,
+             scat0:92.00, scatStep:1.50, scatN:6, close:105.20, out:108.00 };
+  var S7 = { brain:108.60, node:[109.50, 112.00, 114.50, 117.00], sum1:121.90, sum2:123.00, out:126.00 };
+  var S8 = { line:126.00, title:126.90, frame:127.60, q1:129.20, side:131.60,
+             ask:132.80, src:135.20, dim:138.00, out:140.00 };
+
+  /* ============================================================
+     2b · AI 底片（方案 2 混合工作流）
+     只替换背景氛围层：帧序列按幕内时间循环取帧（首尾帧同图 → 无缝），
+     不做 <video>（无头渲染里视频 seek 不可靠，B4 也要求按 t 取帧）。
+     默认关闭：只有 ?ai=1 时才加载与显示，保证交付版本可复现。
+     ============================================================ */
+  var AI_PLATE = {
+    S8: { id:'S8', dir:'qa/ai/frames-s8-norm/', n:151, fps:30 }
+  };
+  var AI_ON = params.get('ai') === '1';
+  var aiLayer = document.getElementById('aiLayer');
+  var AI_IMGS = {};
+  (function loadAIPlate(){
+    if (!AI_ON) return;
+    Object.keys(AI_PLATE).forEach(function(k){
+      var c = AI_PLATE[k], arr = [];
+      for (var i = 1; i <= c.n; i++) {
+        var im = new Image();
+        im.src = c.dir + 'f' + ('000' + i).slice(-3) + '.jpg';
+        arr.push(im);
+      }
+      AI_IMGS[k] = arr;
+    });
+  })();
+  function updateAIPlate(t, sc){
+    if (!AI_ON) return;
+    var c = AI_PLATE[sc.id];
+    if (!c) { aiLayer.style.display = 'none'; return; }
+    var f = Math.floor((t - sc.t0) * c.fps);
+    var span = 2 * c.n - 2;                      // 往返循环：首尾同图，接缝不闪
+    var k = ((f % span) + span) % span;
+    var idx = k < c.n ? k : span - k;
+    var im = AI_IMGS[c.id][idx];
+    if (im && aiLayer.src !== im.src) aiLayer.src = im.src;
+    aiLayer.style.display = 'block';
+    aiLayer.style.opacity = (0.55 + 0.45 * Math.min(1, fadeIn(t, sc.t0, 1.2))).toFixed(3);
+  }
+
+  /* ============================================================
+     3 · 主角物品（ITEMS）· 一张基准坐标表被图形 / 文字 / 光源三处共用
+     ============================================================ */
+  var ITEM_POS = {
+    cardL:   { x:0.260, y:0.460 }, // S1 左观点卡
+    cardR:   { x:0.740, y:0.460 }, // S1 右观点卡
+    selector:{ x:0.500, y:0.460 }, // S1 思考小球
+    field:   { x:0.500, y:0.455 }, // S2–S4 证据云（8 个象征符号）
+    ev1:     { x:0.400, y:0.330 }, ev2:{ x:0.480, y:0.360 }, ev3:{ x:0.520, y:0.310 },
+    ev4:     { x:0.640, y:0.340 }, ev5:{ x:0.430, y:0.490 }, ev6:{ x:0.500, y:0.510 },
+    ev7:     { x:0.545, y:0.470 }, ev8:{ x:0.610, y:0.500 },
+    sieve:   { x:0.500, y:0.455 }, // S3 筛网
+    half:    { x:0.498, y:0.700 }, // S3 金属「一半」
+    keepZone:{ x:0.4325, y:0.400 }, // S3 左堆中心（标签由 dx/dy 跟随群落）
+    dropZone:{ x:0.585, y:0.4275 }, // S3 右堆中心
+    divider: { x:0.500, y:0.420 }, // S4 分隔线
+    dotsGold:{ x:0.4325, y:0.400 }, // S4 左标签锚点（与 S3 左堆同位）
+    dotsGap: { x:0.585, y:0.4275 }, // S4 右标签锚点
+    flow:    { x:0.500, y:0.470 }, // S5 流程链
+    fnode1:  { x:0.200, y:0.470 }, fnode2:{ x:0.400, y:0.470 },
+    fnode3:  { x:0.600, y:0.470 }, fnode4:{ x:0.800, y:0.470 },
+    mainA:   { x:0.220, y:0.400 }, mainB:{ x:0.500, y:0.400 }, mainC:{ x:0.780, y:0.400 },
+    brain:   { x:0.500, y:0.310 }, // S7 大脑
+    bnode1:  { x:0.200, y:0.560 }, bnode2:{ x:0.400, y:0.610 },
+    bnode3:  { x:0.600, y:0.610 }, bnode4:{ x:0.800, y:0.560 },
+    qline:   { x:0.500, y:0.600 }, // S8 汇成的线
+    selfFrame:{ x:0.500, y:0.385 } // S8 自检框
+  };
+  var ITEM_SPEC = {
+    /* 两张观点卡在 15.0s 起用 1.8s 整体收缩淡出（含卡内符号与卡内文字） */
+    cardL:   { ev:S1.cardL, out:S1.cardsOut, outLead:S1.cardsDur, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    cardR:   { ev:S1.cardR, out:S1.cardsOut, outLead:S1.cardsDur, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    selector:{ ev:S1.sel0,  out:S1.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    field:   { ev:S2.search, out:S4.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    ev1:     { ev:S2.dot0, out:S4.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    ev2:     { ev:S2.dot0, out:S4.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    ev3:     { ev:S2.dot0, out:S4.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    ev4:     { ev:S2.dot0, out:S4.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    ev5:     { ev:S2.dot0, out:S4.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    ev6:     { ev:S2.dot0, out:S4.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    ev7:     { ev:S2.dot0, out:S4.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    ev8:     { ev:S2.dot0, out:S4.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    sieve:   { ev:S3.sieve, out:S3.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    half:    { ev:S3.half,  out:S3.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    keepZone:{ ev:S3.sort0, out:S3.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    dropZone:{ ev:S3.sort0, out:S3.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    divider: { ev:S4.matrix,out:S4.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    dotsGold:{ ev:S4.matrix,out:S4.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    dotsGap: { ev:S4.matrix,out:S4.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    flow:    { ev:S5.flow,  out:S5.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    fnode1:  { ev:S5.node0, out:S5.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    fnode2:  { ev:S5.node0 + S5.nodeStep,     out:S5.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    fnode3:  { ev:S5.node0 + 2 * S5.nodeStep, out:S5.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    fnode4:  { ev:S5.node0 + 3 * S5.nodeStep, out:S5.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    mainA:   { ev:S6.A, out:S6.out, bobAmp:4, bobPeriod:24, breathe:29, on:1 },
+    mainB:   { ev:S6.B, out:S6.out, bobAmp:4, bobPeriod:26, breathe:29, on:1 },
+    mainC:   { ev:S6.C, out:S6.out, bobAmp:4, bobPeriod:28, breathe:29, on:1 },
+    brain:   { ev:S7.brain, out:S7.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    bnode1:  { ev:S7.node[0], out:S7.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    bnode2:  { ev:S7.node[1], out:S7.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    bnode3:  { ev:S7.node[2], out:S7.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    bnode4:  { ev:S7.node[3], out:S7.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    qline:   { ev:S8.line,   out:S8.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 },
+    selfFrame:{ ev:S8.frame, out:S8.out, bobAmp:0, bobPeriod:30, breathe:30, on:1 }
+  };
+
+  var ITEMS = {};
+  for (var ik in ITEM_POS) if (Object.prototype.hasOwnProperty.call(ITEM_POS, ik)) {
+    ITEMS[ik] = { cx:rx(ITEM_POS[ik].x), cy:ry(ITEM_POS[ik].y), ev:(ITEM_SPEC[ik]||{}).ev || 0,
+                  dx:0, dy:0, k:1, light:1, on:0, r:1 };
+  }
+  function at(item, ox, oy){
+    var p = ITEM_POS[item] || ITEM_POS.card;
+    return { x:rx(p.x + (ox || 0)), y:ry(p.y + (oy || 0)) };
+  }
+  function attachToLabel(item, text, opt){
+    opt = opt || {};
+    var a = at(item, opt.ox, opt.oy);
+    return {
+      s:opt.s, t:text, x:a.x, y:a.y, lv:opt.lv || 'L3', fs:opt.fs, lh:(opt.lh == null ? 1.30 : opt.lh),
+      w:opt.w, start:opt.start, kai:true, tag:!!opt.tag, vert:!!opt.vert, c:opt.c,
+      opBreathe:!!opt.opBreathe, nowrap:opt.nowrap !== false,
+      outAt:opt.outAt, outDur:opt.outDur,
+      attach:{ item:item, followScale:opt.followScale !== false, followAlpha:opt.followAlpha !== false,
+               /* scaleCouple：标签缩放与物品缩放耦合多少（默认 0.04 = 几乎不缩放；
+                  观点卡退场时设 1，卡片、卡内符号、卡内文字一起收缩） */
+               scaleCouple:(opt.scaleCouple == null ? 0.04 : opt.scaleCouple),
+               /* v2.2：附着标签的渐隐下限 0.50→0.62（attach-check 要求「亮 − 暗」仍 ≥0.35，0.62 留 0.38） */
+               opMin:(opt.opMin == null ? 0.62 : opt.opMin), opMax:(opt.opMax == null ? 1.00 : opt.opMax) }
+    };
+  }
+
+  /* ============================================================
+     4 · 文案分片表（原稿一句不删：拆片 → 降级 → 附着）
+     左列 x=96 为文字通道；主飞机占右上（S1–S2）、左上（S3）
+     ============================================================ */
+  var PIECES = [
+    /* ---- S1 先选立场 0–17s · 先出文字立场，再出思考小球，尾部接心理过渡桥段 ---- */
+    attachToLabel('cardL', '支持死刑',   { s:0, ox:-0.054, oy:-0.278, start:S1.tagL, fs:rFont(46),
+      nowrap:true, outAt:S1.cardsOut, outDur:S1.cardsDur, scaleCouple:1 }),
+    attachToLabel('cardL', '更有威慑力', { s:0, ox:-0.047, oy:-0.204, start:S1.tagL + 0.35, fs:rFont(34),
+      nowrap:true, outAt:S1.cardsOut, outDur:S1.cardsDur, scaleCouple:1 }),
+    attachToLabel('cardR', '反对死刑',   { s:0, ox:-0.054, oy:-0.278, start:S1.tagR, fs:rFont(46),
+      nowrap:true, outAt:S1.cardsOut, outDur:S1.cardsDur, scaleCouple:1 }),
+    attachToLabel('cardR', '更容易误判', { s:0, ox:-0.047, oy:-0.204, start:S1.tagR + 0.35, fs:rFont(34),
+      nowrap:true, outAt:S1.cardsOut, outDur:S1.cardsDur, scaleCouple:1 }),
+    { s:0, t:'先选一个你更认同的立场', x:rx(0.5) - rSize(190), y:ry(0.862), lv:'L4', start:S1.note,
+      fs:rFont(30), c:'rgba(245,241,232,.58)', outAt:S1.noteOut, outDur:0.90 },
+    /* 过渡桥段（13.2–15.0 可见，15.0 起淡出）：把「选完立场之后大脑会干什么」说出来 */
+    { s:0, t:'既然你确立了立场，大脑就会主动寻找可以支撑它的证据',
+      x:rx(0.5) - rSize(648), y:ry(0.635), lv:'L2', start:S1.bridge,
+      fs:rFont(48), metal:true, nowrap:true, outAt:S1.bridgeOut, outDur:1.20 },
+
+    /* ---- S2 证据选择 17–29s · 先留白（只有搜索环），再逐个弹出证据 Group ---- */
+    attachToLabel('field', '同一份研究材料', { s:1, ox:-0.128, oy:-0.238, start:S2.title, fs:rFont(38), nowrap:true }),
+    { s:1, t:'正反证据混杂', x:rx(0.240), y:ry(0.200), lv:'L4', start:S2.corner, fs:rFont(28),
+      c:'rgba(245,241,232,.50)' },
+    /* 证据标签：与所属符号同组（s:2 使其活到 S3 结束，分流时跟着符号一起走） */
+    attachToLabel('ev1', '威慑犯罪',   { s:2, ox:-0.030, oy:0.056, start:S2.dot0 + 0 * S2.dotStep + 0.30, fs:rFont(24), nowrap:true }),
+    attachToLabel('ev2', '无辜者获罪', { s:2, ox:-0.030, oy:0.056, start:S2.dot0 + 1 * S2.dotStep + 0.30, fs:rFont(24), nowrap:true }),
+    attachToLabel('ev3', '降低犯罪',   { s:2, ox:-0.030, oy:0.056, start:S2.dot0 + 2 * S2.dotStep + 0.30, fs:rFont(24), nowrap:true }),
+    attachToLabel('ev4', '审判出错',   { s:2, ox:-0.030, oy:0.056, start:S2.dot0 + 3 * S2.dotStep + 0.30, fs:rFont(24), nowrap:true }),
+    attachToLabel('ev5', '惩罚更重',   { s:2, ox:-0.030, oy:0.048, start:S2.dot0 + 4 * S2.dotStep + 0.30, fs:rFont(24), nowrap:true }),
+    attachToLabel('ev6', '不可逆转',   { s:2, ox:-0.030, oy:0.048, start:S2.dot0 + 5 * S2.dotStep + 0.30, fs:rFont(24), nowrap:true }),
+    attachToLabel('ev7', '威慑持久',   { s:2, ox:-0.030, oy:0.048, start:S2.dot0 + 6 * S2.dotStep + 0.30, fs:rFont(24), nowrap:true }),
+    attachToLabel('ev8', '无法挽回',   { s:2, ox:-0.030, oy:0.048, start:S2.dot0 + 7 * S2.dotStep + 0.30, fs:rFont(24), nowrap:true }),
+    { s:1, t:'挑你认为有说服力的', x:rx(0.5) - rSize(165), y:ry(0.882), lv:'L4', start:S2.note,
+      fs:rFont(30), c:'rgba(245,241,232,.58)' },
+
+    /* ---- S3 筛选揭示 29–54s · 筛网 → 一组亮一组暗 → 分流 → 「一半」（★47.4） ---- */
+    attachToLabel('keepZone', '你留下的', { s:2, ox:-0.055, oy:-0.143, start:S3.tagL, fs:rFont(38), tag:true }),
+    attachToLabel('dropZone', '你忽略的', { s:2, ox:-0.055, oy:-0.140, start:S3.tagR, fs:rFont(38), tag:true }),
+    { s:2, t:'一半', x:rx(0.498) - rSize(183), y:ry(0.700) - rSize(97), lv:'L0', start:S3.half,
+      fs:rFont(176), metal:true, popFrom:0.60, breathe:true, nowrap:true },
+    attachToLabel('half', '同一份材料，你只收下了一半',
+      { s:2, ox:-0.115, oy:0.185, start:S3.note, fs:rFont(30), tag:true }),
+    /* v3.3 采纳：命名仪式铺垫（第二期《幸存者偏差》也有「统计学上，叫做——」这一拍）。
+       放在左侧空列 y0.660 —— 底部带已被「一半」的注与文献线索占满，往下放会连撞三处 */
+    { s:2, t:'这种偏差，心理学上叫——', x:rx(0.05), y:ry(0.660), lv:'L3', start:S3.name,
+      fs:rFont(40), lh:1.30, c:'rgba(245,241,232,.84)' },
+    { s:2, t:'文献线索：LORD · ROSS · LEPPER · 1979', x:rx(0.05), y:ry(0.880), lv:'L4',
+      start:S3.src, fs:rFont(28), c:'rgba(245,241,232,.42)' },
+
+    /* ---- S4 命名卡 54–71s（★67.5） ---- */
+    attachToLabel('dotsGold', '留下的', { s:3, ox:-0.055, oy:-0.143, start:S4.tag1, fs:rFont(38), tag:true }),
+    attachToLabel('dotsGap',  '滤掉的', { s:3, ox:-0.055, oy:-0.140, start:S4.tag2, fs:rFont(38), tag:true }),
+    { s:3, t:'先确立立场，大脑再筛选证据', x:rx(0.893), y:ry(0.300), lv:'L4', start:S4.side, fs:rFont(28),
+      vert:true, c:'rgba(245,241,232,.46)' },
+    { s:3, t:'示意：仅概念模型', x:rx(0.60), y:ry(0.870), lv:'L4', start:S4.disc, fs:rFont(28),
+      c:'rgba(245,241,232,.38)' },
+    { s:3, t:'确认偏误', x:rx(0.5) - rSize(408), y:ry(0.575), lv:'L0', start:S4.title,
+      fs:rFont(200), metal:true, breathe:true, nowrap:true },
+    { s:3, t:'CONFIRMATION BIAS', x:rx(0.5) - rSize(190), y:ry(0.800), lv:'L3', start:S4.sub,
+      fs:rFont(40), c:'rgba(245,241,232,.66)', nowrap:true },
+    /* v3.3 采纳：从「是什么」转向「为什么」的反问钩子。落在左侧空列 y0.805
+       —— 原方案放 y0.860 会压住右下的「示意：仅概念模型」 */
+    { s:3, t:'你可能会想，这是故意的吧？', x:rx(0.05), y:ry(0.805), lv:'L3', start:S4.hook,
+      fs:rFont(38), lh:1.30, c:'rgba(245,241,232,.80)' },
+
+    /* ---- S5 机制展开 71–86s ---- */
+    { s:4, t:'先有结论', x:rx(0.10), y:ry(0.180), lv:'L2', start:S5.left, fs:rFont(56), nowrap:true },
+    { s:4, t:'再找证据', x:rx(0.60), y:ry(0.180), lv:'L2', start:S5.right, fs:rFont(56), nowrap:true },
+    attachToLabel('fnode1', '预设立场', { s:4, ox:-0.075, oy:0.056, start:S5.node0 + 0.35, fs:rFont(34), nowrap:true }),
+    attachToLabel('fnode2', '只找支持', { s:4, ox:-0.075, oy:0.056, start:S5.node0 + S5.nodeStep + 0.35, fs:rFont(34), nowrap:true }),
+    attachToLabel('fnode3', '忽略相反', { s:4, ox:-0.075, oy:0.056, start:S5.node0 + 2 * S5.nodeStep + 0.35, fs:rFont(34), nowrap:true }),
+    attachToLabel('fnode4', '偏见加固', { s:4, ox:-0.075, oy:0.056, start:S5.node0 + 3 * S5.nodeStep + 0.35, fs:rFont(34), nowrap:true }),
+    /* 34px 保证两句都落在单行（40px 时第二句 993px > 845 文字通道会折行，折行后盒子
+       会伸进底部窄带、触发 A30）；两句都停在 y≤0.80H，离开底部带 */
+    { s:4, t:'不是人故意说谎；', x:rx(0.5) - rSize(188), y:ry(0.700), lv:'L3', start:S5.note,
+      fs:rFont(34), lh:1.30, c:'rgba(245,241,232,.78)' },
+    { s:4, t:'一旦立场先行，寻找证据的过程本身就自带偏向。', x:rx(0.5) - rSize(404), y:ry(0.775), lv:'L3',
+      start:S5.note2, fs:rFont(34), lh:1.30, c:'rgba(245,241,232,.92)' },
+
+    /* ---- S6 生活迁移 86–108s · 三场景各过滤一次证据 ---- */
+    attachToLabel('mainA', '越刷越对', { s:5, ox:-0.075, oy:-0.190, start:S6.A, fs:rFont(40), tag:true }),
+    attachToLabel('mainB', '吵架双标', { s:5, ox:-0.075, oy:-0.190, start:S6.B, fs:rFont(40), tag:true }),
+    attachToLabel('mainC', '只看利好', { s:5, ox:-0.075, oy:-0.190, start:S6.C, fs:rFont(40), tag:true }),
+    { s:5, t:'不是证据太少，是你只收下了想看的那半', x:rx(0.05), y:ry(0.790), lv:'L3',
+      start:S6.close, fs:rFont(40), c:'rgba(245,241,232,.90)' },
+
+    /* ---- S7 大脑处理 108–126s ---- */
+    attachToLabel('bnode1', '先有立场', { s:6, ox:0.031, oy:-0.012, start:S7.node[0], fs:rFont(40), tag:true }),
+    attachToLabel('bnode2', '只找支持', { s:6, ox:0.031, oy:-0.012, start:S7.node[1], fs:rFont(40), tag:true }),
+    attachToLabel('bnode3', '读得更快', { s:6, ox:0.031, oy:-0.012, start:S7.node[2], fs:rFont(40), tag:true }),
+    attachToLabel('bnode4', '记得更牢', { s:6, ox:0.031, oy:-0.012, start:S7.node[3], fs:rFont(40), tag:true }),
+    { s:6, t:'大脑问的不是「我会不会错」，', x:rx(0.05), y:ry(0.832), lv:'L3', start:S7.sum1,
+      fs:rFont(36), lh:1.30, c:'rgba(245,241,232,.72)' },
+    { s:6, t:'是「这能不能证明我对」。',     x:rx(0.05), y:ry(0.892), lv:'L3', start:S7.sum2,
+      fs:rFont(36), lh:1.30, c:'rgba(245,241,232,.94)' },
+
+    /* ---- S8 自检收束 126–140s（★129.2） ---- */
+    { s:7, t:'确认偏误', x:rx(0.5) - rSize(196), y:ry(0.062), lv:'L2', start:S8.title,
+      fs:rFont(96), metal:true, nowrap:true },
+    { s:7, t:'我有没有刻意忽略相反的证据？', x:rx(0.5) - rSize(632), y:ry(0.330), lv:'L1', start:S8.q1,
+      fs:rFont(84), metal:true, breathe:true, nowrap:true },
+    { s:7, t:'看不见的反面，往往才是答案', x:rx(0.857), y:ry(0.300), lv:'L4', start:S8.side,
+      fs:rFont(28), h:rSize(190), vert:true, c:'rgba(245,241,232,.46)' },
+    { s:7, t:'你上一次改变看法，是因为哪条证据？', x:rx(0.56), y:ry(0.660), lv:'L3', start:S8.ask,
+      fs:rFont(44), c:'rgba(245,241,232,.66)', w:rSize(640) },
+    { s:7, t:'文献线索：LORD · ROSS · LEPPER · 1979', x:rx(0.56), y:ry(0.850), lv:'L4',
+      start:S8.src, fs:rFont(28), c:'rgba(245,241,232,.42)' }
+  ];
+
+  /* ============================================================
+     5 · 光源（全片漫游）+ 扫光联动 LightLink
+     ============================================================ */
+  var LIGHT_R = rSize(640);
+
+  /* ==================================================================
+     系列结构约定（对标 skill §4.5「系列结构约定」）
+     —— 命名卡 / 猜-答 / 片尾三件套 / 示意标注 / 文献线索全部落地。
+     本片把「猜-答」升级成真正的观众参与：S1 选立场 → S2 挑证据 → S3 亲眼看见筛选。
+     硬约束不变：BEAT 唯一时序源 / S5 复用 S4 同一套点阵 / 单元素平移 <12px/s /
+     三处 low_impact（47.4「一半」· 67.5「确认偏误」· 129.2 收尾金句）。
+     ================================================================== */
+  SCREENS[2].note = 'LORD · ROSS · LEPPER 1979';
+  SCREENS[3].note = 'CONFIRMATION BIAS · 示意非实验数据';
+  SCREENS[4].note = '筛子是谁装的 · 示意非实验数据';
+
+  /* ==================================================================
+     v2-b 文字组件化（字体分层 + 色值分层 + 逐字入场）
+     依据 skill §4.2 三类文字：图形 > 主标题 > 附着标签 > 边角注释
+     · L0/L1 主标题与关键词：保持金属 / 米白，逐字入场
+     · L3 附着标签：楷体 + 香槟金 #D7B979
+     · L4 注释/文献/示意：暗金灰
+     · 金属字不做逐字（background-clip:text 下字级 opacity 不生效），保留整片描边/扫光
+     ================================================================== */
+
+  var STAGGER_STEP = 0.055;   // 逐字步长 ≈18 字/秒；14 字 ≈0.77s，落在「单行 0.8–1.0s」区间
+  PIECES.forEach(function(p){
+    /* 最终分层（2026-10-09 定稿）：L3 暗香槟金 #C8A964 ｜ L4 暗金灰 #9A8560 ｜ 金属金句另见 .metal */
+    if (p.tag) p.c = 'rgba(203,172,103,.96)';                    // L3 附着标签 → #C8A964 提亮 6%
+    if (p.lv === 'L3' && !p.tag) p.c = 'rgba(216,201,168,.88)';  // 英文副题等 → #D8C9A8
+    if (p.lv === 'L4') p.c = 'rgba(181,155,112,1)';              // L4 注释 → #B59B70 实色（v2.2 去掉 .95 的二次衰减）
+    if (p.lv === 'L3' || p.tag) p.kai = true;            // L3 一律楷体
+    p.stagger = (!p.metal) && ['L0', 'L1', 'L2'].indexOf(p.lv) >= 0;
+  });
+  /* ==================================================================
+     v2.2 可读性（依据《文字可读性改进方案》，只动样式与渐隐下限，不动任何时刻）
+     ① 本体保护层：贴在动态图形上的附着标签，加本地薄黑衬底（.pad）
+     ② 语义高亮：只给 2 处转折句上香槟金 #D7B979（token 色，不新增色值）
+     ③ 渐隐下限：非附着文字 opMin 0.50→0.78（离光最远时不再掉到半透明）
+        —— 实测这才是"文字偏淡"的主因：光源漫游把正文乘到 50%，比颜色本身影响大
+     ================================================================== */
+  var HILITE = ['是「这能不能证明我对」。', '你上一次改变看法，是因为哪条证据？'];
+  PIECES.forEach(function(p){
+    if (p.attach) p.pad = true;                       // 贴图形 → 本地衬底
+    if (HILITE.indexOf(p.t) >= 0) p.c = '#D7B979';    // 语义高亮（香槟金 token）
+  });
+  var LIGHT_KEYS = [];
+  /* 图形锚点：光源除了"停在被读到的文字上"，还要漫游到当前主角图形上（03 号文件 §5「物↔光」）。
+     没有这些锚点，文字聚集在一列时光源会一直停在同一边，附着文字永远压不下去（A31 判不成立）。 */
+  var LIGHT_ANCHORS = [
+    /* S1 先选立场：两张观点卡 → 思考小球 → 底部提问 */
+    { t:2.8,  x:0.26, y:0.46 }, { t:5.6,  x:0.74, y:0.46 }, { t:8.4,  x:0.50, y:0.46 },
+    { t:11.6, x:0.62, y:0.46 }, { t:15.6, x:0.50, y:0.86 },
+    /* S2 证据选择：证据云 → 右上角小字 → 底部提问 */
+    { t:19.0, x:0.50, y:0.44 }, { t:21.4, x:0.46, y:0.36 }, { t:22.0, x:0.16, y:0.82 },
+    { t:24.6, x:0.56, y:0.50 },
+    /* S3 筛选揭示：筛网 → 两堆证据 → 「一半」 → 文献线索 */
+    { t:31.4, x:0.50, y:0.45 }, { t:38.0, x:0.42, y:0.45 }, { t:44.0, x:0.58, y:0.45 },
+    { t:48.2, x:0.50, y:0.66 }, { t:52.4, x:0.15, y:0.88 },
+    /* S4 命名卡：分隔线与两堆 → 主标题 → 副题 */
+    { t:55.4, x:0.50, y:0.44 }, { t:60.6, x:0.42, y:0.44 }, { t:63.4, x:0.58, y:0.44 },
+    { t:67.0, x:0.50, y:0.62 }, { t:69.4, x:0.50, y:0.83 },
+    /* S5 机制展开：四个节点从左到右 */
+    { t:74.0, x:0.20, y:0.47 }, { t:75.3, x:0.94, y:0.22 }, { t:77.6, x:0.40, y:0.47 },
+    { t:80.4, x:0.60, y:0.47 }, { t:83.5, x:0.06, y:0.22 }, { t:85.4, x:0.50, y:0.79 },
+    /* S6 生活迁移：三个场景 */
+    { t:90.0, x:0.22, y:0.40 }, { t:96.5, x:0.50, y:0.40 }, { t:102.0, x:0.78, y:0.40 }, { t:106.5, x:0.62, y:0.40 },
+    /* S7 大脑处理：大脑 → 四个节点 → 双标证据 */
+    { t:110.0, x:0.50, y:0.31 }, { t:113.0, x:0.40, y:0.61 }, { t:115.5, x:0.60, y:0.61 },
+    { t:118.0, x:0.20, y:0.56 }, { t:120.5, x:0.80, y:0.56 }, { t:124.4, x:0.50, y:0.74 },
+    /* S8 自检收束：汇线 → 自检框 → 左右对照证据 */
+    { t:126.6, x:0.50, y:0.60 }, { t:130.0, x:0.50, y:0.38 }, { t:133.0, x:0.50, y:0.58 },
+    { t:138.5, x:0.50, y:0.58 }
+  ];
+
+  function buildLightKeys(){
+    var list = [], pinTimes = [];
+    SCREENS.forEach(function(sc, si){
+      list.push({ t:sc.t0 + 0.05, x:rx(0.30), y:ry(0.30), hard:true });
+      pieceEls.filter(function(r){ return r.rec.s === si; })
+        .sort(function(a, b){ return a.rec.start - b.rec.start; })
+        .forEach(function(r){
+          /* 采样时刻与体检脚本一致：非附着元素 +1.1s、附着标签 +0.7s（narrative.mjs「扫光聚焦」口径）。
+             关键帧就压在这两个时刻上，光必须"停在被读到的那句话上"。 */
+          var off = r.rec.attach ? 0.70 : 1.10;
+          var at = Math.min(Math.max(sc.t0 + 0.5, r.rec.start + off), sc.t1 - 0.20);
+          /* 关键帧窗口 ±0.35s：覆盖体检脚本的采样时刻（非附着 +1.1s / 附着 +0.7s），
+             窗口内光源贴着这句话走 70px（≈100px/s），不会被判成"柔光静止" */
+          list.push({ t:at - 0.35, x:r.cx - rSize(35), y:r.cy - rSize(35) });
+          list.push({ t:at + 0.35, x:r.cx + rSize(35), y:r.cy + rSize(35) });
+          pinTimes.push(at);
+        });
+      list.push({ t:sc.t1 - 0.05, x:rx(0.50), y:ry(0.50), hard:true });
+    });
+    /* 图形锚点：与任何"文字关键帧窗口"重叠的一律丢弃，避免把光从正在读的句子上拽走 */
+    LIGHT_ANCHORS.forEach(function(a){
+      var clash2 = pinTimes.some(function(pt){ return Math.abs(pt - a.t) <= 0.40; });
+      if (!clash2) list.push({ t:a.t, x:rx(a.x), y:ry(a.y) });
+    });
+    list.sort(function(a, b){ return a.t - b.t; });
+    LIGHT_KEYS = [];
+    var lastT = -9;
+    list.forEach(function(m){
+      var t = Math.max(m.t, lastT + 0.05);
+      t = Math.min(t, TOTAL - 0.02);
+      lastT = t;
+      LIGHT_KEYS.push({ t:t, x:m.x, y:m.y });
+    });
+  }
+  function lightAt(t){
+    var i = 0;
+    while (i < LIGHT_KEYS.length - 2 && LIGHT_KEYS[i + 1].t <= t) i++;
+    var a = LIGHT_KEYS[i], b = LIGHT_KEYS[i + 1] || a;
+    var u = b.t > a.t ? clamp01((t - a.t) / (b.t - a.t)) : 0;
+    u = smoothstep(u);
+    /* 柔光永远在慢慢走：叠一层 6px 的双周期微摆，保证任何时刻都有 ≥8px/s 的位移分量
+       （§5.4 要求"光必须一直在走"，静止区间会被 narrative.mjs 判不合格） */
+    return { x:lerp(a.x, b.x, u) + 6 * Math.sin(2 * Math.PI * t / 3.1),
+             y:lerp(a.y, b.y, u) + 6 * Math.cos(2 * Math.PI * t / 4.3) };
+  }
+  function falloff(d){
+    var x = clamp01(1 - d / LIGHT_R);
+    return x * x * (3 - 2 * x);
+  }
+  /* 亮因子（0.74 ↔ 1.00）：元件与体检脚本必须用同一条公式（A31） */
+  function litFactor(cx, cy, L){
+    return 0.74 + 0.26 * smoothstep((LIGHT_R - Math.hypot(cx - L.x, cy - L.y)) / (LIGHT_R * 0.85));
+  }
+  function lightOf(it, L){
+    return litFactor(it.cx + it.dx, it.cy + it.dy, L);
+  }
+
+  /* ============================================================
+     6 · 物品每帧更新（只更新 dx/dy/k/light/on）
+     ============================================================ */
+  function updateItems(t, L){
+    for (var k in ITEMS) if (Object.prototype.hasOwnProperty.call(ITEMS, k)) {
+      var it = ITEMS[k], sp = ITEM_SPEC[k] || { ev:0, out:TOTAL };
+      it.on = fadeIn(t, sp.ev, STAGE_IN) * fadeOut(t, sp.out, sp.outLead || OUT_LEAD);
+      it.dx = Math.round((sp.bobAmp || 0) * Math.sin(2 * Math.PI * (t - sp.ev) / (sp.bobPeriod || 20)));
+      it.dy = Math.round((sp.bobAmp || 0) * 0.6 * Math.cos(2 * Math.PI * (t - sp.ev) / (sp.bobPeriod || 20)));
+      /* 「整体位移」用漂移实现：13.5s 走 60px ≈ 4.4px/s，落在 §5.4 母题平移 <12px/s 之内 */
+      if (sp.drift) {
+        var du = smoothstep(clamp01((t - sp.drift.t0) / (sp.drift.t1 - sp.drift.t0)));
+        it.dx += Math.round((sp.drift.dx || 0) * du);
+        it.dy += Math.round((sp.drift.dy || 0) * du);
+        if (sp.drift.k != null) it.k *= lerp(1, sp.drift.k, du);
+      }
+      it.k = 1 + 0.02 * Math.sin(2 * Math.PI * t / (sp.breathe || BREATHE_PERIOD));
+      it.light = lightOf(it, L);
+    }
+  }
+
+  /* ============================================================
+     7 · 证据象征符号库 + S1–S3 母题
+     证据不再是圆形光点，而是可识别的 SVG 象征符号：
+       支持一方 → 盾牌 / 锁 / 警棍 / 威慑波纹
+       反对一方 → 放大镜 / 蒙冤剪影 / 破碎天平 / 警示三角
+     状态：常态=高亮金描边；选中=选中态金+加粗+外发光+轻微放大；
+           被忽略=暗金+低透明+收细描边。
+     ============================================================ */
+  var EV = {
+    hot:  'rgba(255,215,102,.96)',   /* #FFD766 */
+    sel:  'rgba(255,176,32,.99)',    /* #FFB020 */
+    dim:  'rgba(138,117,64,.70)',    /* #8A7540 */
+    glowHot: 'drop-shadow(0 0 9px rgba(255,215,102,.55))',
+    glowSel: 'drop-shadow(0 0 16px rgba(255,176,32,.85))',
+    wHot: 3.4, wSel: 4.8, wDim: 2.2
+  };
+  function easeOutBack(x){
+    x = clamp01(x);
+    var c1 = 1.70158, c3 = c1 + 1;
+    return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+  }
+  /* 符号按 64×64 设计，s = 目标像素 / 64（烘进坐标，描边不受整体缩放影响） */
+  var SYM = {
+    shield: function(g, s){
+      g.appendChild(smk('path', { d:'M0,' + (-26*s) + ' L' + (21*s) + ',' + (-15*s) + ' L' + (21*s) + ',' + (7*s) +
+        ' C' + (21*s) + ',' + (23*s) + ' 0,' + (33*s) + ' 0,' + (33*s) +
+        ' C0,' + (33*s) + ' ' + (-21*s) + ',' + (23*s) + ' ' + (-21*s) + ',' + (7*s) +
+        ' L' + (-21*s) + ',' + (-15*s) + ' Z' }));
+      g.appendChild(smk('line', { x1:0, y1:(-13*s), x2:0, y2:(16*s) }));
+    },
+    lock: function(g, s){
+      g.appendChild(smk('rect', { x:(-17*s), y:(-3*s), width:(34*s), height:(28*s), rx:(6*s) }));
+      g.appendChild(smk('path', { d:'M' + (-9*s) + ',' + (-3*s) + ' L' + (-9*s) + ',' + (-16*s) +
+        ' A' + (9*s) + ',' + (9*s) + ' 0 0 1 ' + (9*s) + ',' + (-16*s) + ' L' + (9*s) + ',' + (-3*s) }));
+      g.appendChild(smk('circle', { cx:0, cy:(10*s), r:(3.6*s) }));
+    },
+    baton: function(g, s){
+      g.appendChild(smk('rect', { x:(-5*s), y:(-31*s), width:(10*s), height:(46*s), rx:(5*s) }));
+      g.appendChild(smk('rect', { x:(-11*s), y:(13*s), width:(22*s), height:(13*s), rx:(5*s) }));
+      g.appendChild(smk('line', { x1:(-3*s), y1:(-24*s), x2:(-3*s), y2:(2*s) }));
+    },
+    ripple: function(g, s){
+      for (var i = 3; i >= 1; i--) {
+        g.appendChild(smk('path', { d:'M' + (-7*s) + ',' + (-i*8*s) + ' A' + (i*19*s) + ',' + (i*19*s) +
+          ' 0 0 1 ' + (7*s) + ',' + (-i*8*s) }));
+      }
+      g.appendChild(smk('circle', { cx:0, cy:(18*s), r:(5.5*s) }));
+    },
+    magnifier: function(g, s){
+      g.appendChild(smk('circle', { cx:(-4*s), cy:(-6*s), r:(17*s) }));
+      g.appendChild(smk('line', { x1:(8*s), y1:(7*s), x2:(24*s), y2:(23*s) }));
+      g.appendChild(smk('line', { x1:(-12*s), y1:(-11*s), x2:(4*s), y2:(-1*s) }));
+    },
+    silhouette: function(g, s){
+      g.appendChild(smk('circle', { cx:(-4*s), cy:(-15*s), r:(9*s) }));
+      g.appendChild(smk('path', { d:'M' + (-19*s) + ',' + (22*s) + ' C' + (-19*s) + ',' + (1*s) + ' ' +
+        (11*s) + ',' + (1*s) + ' ' + (11*s) + ',' + (22*s) + ' Z' }));
+      g.appendChild(smk('line', { x1:(13*s), y1:(-21*s), x2:(26*s), y2:(-8*s) }));
+      g.appendChild(smk('line', { x1:(26*s), y1:(-21*s), x2:(13*s), y2:(-8*s) }));
+    },
+    brokenScales: function(g, s){
+      g.appendChild(smk('line', { x1:0, y1:(-25*s), x2:0, y2:(4*s) }));
+      g.appendChild(smk('path', { d:'M' + (-23*s) + ',' + (-17*s) + ' L0,' + (-25*s) + ' L' + (-7*s) + ',' + (-5*s) + ' Z' }));
+      g.appendChild(smk('path', { d:'M' + (11*s) + ',' + (-15*s) + ' L' + (25*s) + ',' + (11*s) + ' L0,' + (5*s) + ' Z' }));
+      g.appendChild(smk('line', { x1:(-15*s), y1:(21*s), x2:(15*s), y2:(21*s) }));
+    },
+    warn: function(g, s){
+      g.appendChild(smk('path', { d:'M0,' + (-27*s) + ' L' + (27*s) + ',' + (21*s) + ' L' + (-27*s) + ',' + (21*s) + ' Z' }));
+      g.appendChild(smk('line', { x1:0, y1:(-9*s), x2:0, y2:(4*s) }));
+      g.appendChild(smk('circle', { cx:0, cy:(12*s), r:(2.8*s) }));
+    },
+    scales: function(g, s){
+      g.appendChild(smk('line', { x1:0, y1:(-25*s), x2:0, y2:(14*s) }));
+      g.appendChild(smk('line', { x1:(-22*s), y1:(-17*s), x2:(22*s), y2:(-17*s) }));
+      g.appendChild(smk('path', { d:'M' + (-33*s) + ',' + (6*s) + ' A' + (11*s) + ',' + (11*s) + ' 0 0 1 ' + (-11*s) + ',' + (6*s) }));
+      g.appendChild(smk('path', { d:'M' + (11*s) + ',' + (6*s) + ' A' + (11*s) + ',' + (11*s) + ' 0 0 1 ' + (33*s) + ',' + (6*s) }));
+      g.appendChild(smk('line', { x1:(-15*s), y1:(22*s), x2:(15*s), y2:(22*s) }));
+    },
+    check: function(g, s){
+      g.appendChild(smk('path', { d:'M' + (-21*s) + ',' + (2*s) + ' L' + (-6*s) + ',' + (17*s) + ' L' + (23*s) + ',' + (-17*s) }));
+    },
+    cross: function(g, s){
+      g.appendChild(smk('line', { x1:(-17*s), y1:(-17*s), x2:(17*s), y2:(17*s) }));
+      g.appendChild(smk('line', { x1:(17*s), y1:(-17*s), x2:(-17*s), y2:(17*s) }));
+    },
+    arrowUp: function(g, s){
+      g.appendChild(smk('path', { d:'M0,' + (-25*s) + ' L' + (15*s) + ',' + (-6*s) + ' L' + (5*s) + ',' + (-6*s) +
+        ' L' + (5*s) + ',' + (21*s) + ' L' + (-5*s) + ',' + (21*s) + ' L' + (-5*s) + ',' + (-6*s) +
+        ' L' + (-15*s) + ',' + (-6*s) + ' Z' }));
+    },
+    question: function(g, s){
+      g.appendChild(smk('path', { d:'M' + (-13*s) + ',' + (-11*s) + ' A' + (13*s) + ',' + (13*s) + ' 0 0 1 ' +
+        (13*s) + ',' + (-9*s) + ' C' + (13*s) + ',' + (3*s) + ' 0,' + (3*s) + ' 0,' + (12*s) }));
+      g.appendChild(smk('circle', { cx:0, cy:(22*s), r:(3.2*s) }));
+    },
+    brain: function(g, s){
+      g.appendChild(smk('path', { d:'M' + (-27*s) + ',' + (-2*s) +
+        ' C' + (-31*s) + ',' + (-23*s) + ' ' + (-12*s) + ',' + (-31*s) + ' ' + (-2*s) + ',' + (-23*s) +
+        ' C' + (6*s) + ',' + (-35*s) + ' ' + (29*s) + ',' + (-27*s) + ' ' + (25*s) + ',' + (-6*s) +
+        ' C' + (37*s) + ',' + (4*s) + ' ' + (27*s) + ',' + (25*s) + ' ' + (8*s) + ',' + (23*s) +
+        ' C0,' + (33*s) + ' ' + (-17*s) + ',' + (27*s) + ' ' + (-17*s) + ',' + (12*s) +
+        ' C' + (-31*s) + ',' + (12*s) + ' ' + (-33*s) + ',' + (4*s) + ' ' + (-27*s) + ',' + (-2*s) + ' Z' }));
+      g.appendChild(smk('path', { d:'M0,' + (-21*s) + ' L0,' + (27*s) }));
+      g.appendChild(smk('path', { d:'M' + (-16*s) + ',' + (-8*s) + ' L' + (-6*s) + ',' + (-2*s) }));
+      g.appendChild(smk('path', { d:'M' + (16*s) + ',' + (-4*s) + ' L' + (6*s) + ',' + (5*s) }));
+    },
+    stance: function(g, s){
+      g.appendChild(smk('circle', { cx:(-11*s), cy:(-13*s), r:(8*s) }));
+      g.appendChild(smk('path', { d:'M' + (-25*s) + ',' + (22*s) + ' C' + (-25*s) + ',' + (2*s) + ' ' +
+        (3*s) + ',' + (2*s) + ' ' + (3*s) + ',' + (22*s) + ' Z' }));
+      g.appendChild(smk('rect', { x:(7*s), y:(-20*s), width:(25*s), height:(17*s), rx:(3*s) }));
+      g.appendChild(smk('line', { x1:(12*s), y1:(-14*s), x2:(26*s), y2:(-14*s) }));
+      g.appendChild(smk('line', { x1:(12*s), y1:(-8*s), x2:(22*s), y2:(-8*s) }));
+    },
+    phone: function(g, s){
+      g.appendChild(smk('rect', { x:(-15*s), y:(-27*s), width:(30*s), height:(54*s), rx:(7*s) }));
+      g.appendChild(smk('line', { x1:(-6*s), y1:(19*s), x2:(6*s), y2:(19*s) }));
+      for (var i = 1; i <= 3; i++) {
+        g.appendChild(smk('path', { d:'M' + (-(6+i*7)*s) + ',' + (-(5+i*7)*s) + ' A' + (i*17*s) + ',' + (i*17*s) +
+          ' 0 0 1 ' + ((6+i*7)*s) + ',' + (-(5+i*7)*s) }));
+      }
+    },
+    people: function(g, s){
+      g.appendChild(smk('circle', { cx:(-15*s), cy:(-13*s), r:(8*s) }));
+      g.appendChild(smk('path', { d:'M' + (-29*s) + ',' + (21*s) + ' C' + (-29*s) + ',' + (0*s) + ' ' +
+        '0,' + (0*s) + ' 0,' + (21*s) + ' Z' }));
+      g.appendChild(smk('circle', { cx:(15*s), cy:(-13*s), r:(8*s) }));
+      g.appendChild(smk('path', { d:'M0,' + (21*s) + ' C0,' + (0*s) + ' ' + (29*s) + ',' + (0*s) + ' ' + (29*s) + ',' + (21*s) + ' Z' }));
+      g.appendChild(smk('line', { x1:(-31*s), y1:(-25*s), x2:(-17*s), y2:(-25*s) }));
+      g.appendChild(smk('line', { x1:(17*s), y1:(-25*s), x2:(31*s), y2:(-25*s) }));
+    },
+    kline: function(g, s){
+      [[-19,-12,26],[-6,7,20],[7,-17,34],[19,2,16]].forEach(function(b){
+        g.appendChild(smk('line', { x1:(b[0]*s), y1:((b[1]-11)*s), x2:(b[0]*s), y2:((b[1]+b[2]+11)*s) }));
+        g.appendChild(smk('rect', { x:((b[0]-5)*s), y:(b[1]*s), width:(10*s), height:(b[2]*s), rx:(2*s) }));
+      });
+    },
+    sieve: function(g, s){
+      g.appendChild(smk('path', { d:'M' + (-23*s) + ',' + (-11*s) + ' L' + (23*s) + ',' + (-11*s) +
+        ' L' + (12*s) + ',' + (13*s) + ' L' + (-12*s) + ',' + (13*s) + ' Z' }));
+      for (var i = 1; i <= 2; i++) {
+        g.appendChild(smk('line', { x1:((-23+11.5*i)*s), y1:(-11*s), x2:((-12+12*i)*s), y2:(13*s) }));
+        g.appendChild(smk('line', { x1:(-17.6*s), y1:((-11+8*i)*s), x2:(17.6*s), y2:((-11+8*i)*s) }));
+      }
+    }
+  };
+  function symInto(parent, kind, px, py, size){
+    var g = smk('g');
+    g.setAttribute('transform', 'translate(' + px.toFixed(1) + ',' + py.toFixed(1) + ')');
+    g.style.fill = 'none';
+    g.style.stroke = EV.hot;
+    g.style.strokeWidth = EV.wHot;
+    g.style.strokeLinecap = 'round';
+    g.style.strokeLinejoin = 'round';
+    SYM[kind](g, size / 64);
+    parent.appendChild(g);
+    return g;
+  }
+  function paintSym(g, state, op){
+    g.style.stroke = state === 'sel' ? EV.sel : (state === 'dim' ? EV.dim : EV.hot);
+    g.style.strokeWidth = state === 'sel' ? EV.wSel : (state === 'dim' ? EV.wDim : EV.wHot);
+    g.style.filter = state === 'sel' ? EV.glowSel : (state === 'hot' ? EV.glowHot : 'none');
+    g.style.opacity = op.toFixed(3);
+  }
+  function placeSym(g, px, py, sc){
+    g.setAttribute('transform', 'translate(' + px.toFixed(1) + ',' + py.toFixed(1) + ') scale(' + sc.toFixed(4) + ')');
+  }
+
+  var itemsSvg = smk('svg', { id:'items', width:W, height:H, viewBox:'0 0 ' + W + ' ' + H });
+  structRoot.appendChild(itemsSvg);
+  /* 背景辅助层：低透明灰金网格（0.08–0.15），把动画从背景里托出来 */
+  (function buildGrid(){
+    var g = smk('g');
+    g.style.stroke = 'rgba(255,215,102,.085)';
+    g.style.strokeWidth = '1';
+    for (var x = 0; x <= 24; x++) g.appendChild(smk('line', { x1:(x * W / 24), y1:0, x2:(x * W / 24), y2:H }));
+    for (var y = 0; y <= 14; y++) g.appendChild(smk('line', { x1:0, y1:(y * H / 14), x2:W, y2:(y * H / 14) }));
+    g.style.opacity = '1';
+    itemsSvg.appendChild(g);
+    itemsSvg.__grid = g;
+  })();
+
+  /* ---- S1 两张观点卡（卡内是立场象征符号，不是光点） ---- */
+  var OPINION = { w:0.226, h:0.300, sym:64 };
+  function buildOpinionCard(kinds){
+    var g = smk('g');
+    itemsSvg.appendChild(g);
+    var box = smk('rect', { x:(-OPINION.w / 2 * W).toFixed(1), y:(-OPINION.h / 2 * H).toFixed(1),
+                            width:(OPINION.w * W).toFixed(1), height:(OPINION.h * H).toFixed(1), rx:20 });
+    box.setAttribute('class', 'p-card');
+    box.style.opacity = '0';
+    g.appendChild(box);
+    var syms = kinds.map(function(k, i){
+      return symInto(g, k, ((i - 0.5) * 0.092) * W, rSize(4), OPINION.sym);
+    });
+    var len = 0;
+    try { len = box.getTotalLength(); } catch (e) { len = 1500; }
+    return { g:g, box:box, syms:syms, len:len };
+  }
+  var cardL = buildOpinionCard(['shield', 'lock']);
+  var cardR = buildOpinionCard(['magnifier', 'brokenScales']);
+
+  /* ---- S1 思考小球（文字全部出现之后才出场） ---- */
+  var selG = smk('g');
+  var selHalo = smk('circle', { cx:0, cy:0, r:rSize(30) });
+  selHalo.style.fill = 'rgba(255,176,32,.16)';
+  var selRing = smk('circle', { cx:0, cy:0, r:rSize(20) });
+  selRing.style.fill = 'none'; selRing.style.stroke = 'rgba(255,215,102,.70)'; selRing.style.strokeWidth = '2.4';
+  var selDot = smk('circle', { cx:0, cy:0, r:rSize(13) });
+  selDot.style.fill = 'rgba(255,215,102,1)';
+  selG.appendChild(selHalo); selG.appendChild(selRing); selG.appendChild(selDot);
+  selG.style.filter = EV.glowSel;
+  itemsSvg.appendChild(selG);
+
+  /* ---- S2/S3 证据云：8 个象征符号（4 支持 / 4 反对，位置刻意混杂） ---- */
+  var FIELD = { size:56 };
+  var EV_ITEMS = [
+    { kind:'shield',       stance:'S', p:[0.400, 0.330], label:'死刑有威慑作用' },
+    { kind:'silhouette',   stance:'O', p:[0.480, 0.360], label:'无辜者被判有罪' },
+    { kind:'lock',         stance:'S', p:[0.520, 0.310], label:'降低犯罪率' },
+    { kind:'magnifier',    stance:'O', p:[0.640, 0.340], label:'审判可能出错' },
+    { kind:'baton',        stance:'S', p:[0.430, 0.490], label:'加强惩罚力度' },
+    { kind:'warn',         stance:'O', p:[0.500, 0.510], label:'死刑不可逆转' },
+    { kind:'ripple',       stance:'S', p:[0.545, 0.470], label:'威慑更持久' },
+    { kind:'brokenScales', stance:'O', p:[0.610, 0.500], label:'误判无法挽回' }
+  ];
+  (function assignSlots(){
+    /* 分流只走横向：每个符号保持自己那一行，只换列 —— 因此任意两条标签的纵向间距
+       在整个分流过程中恒定，不会出现"两条标签一边横移一边撞在一起"的情况。
+       两堆各两列：左 0.395 / 0.470，右 0.545 / 0.620（堆间空隙 144px）。
+       每列 2 个符号 → 全枚举列分配、取「最大位移最小」的解。 */
+    function placeCols(list, cols){
+      var best = null, bestMax = 1e9, n = list.length, cap = n / cols.length;
+      (function rec(i, counts, picks){
+        if (i === n) {
+          if (counts.some(function(c){ return c !== cap; })) return;
+          var mx = 0;
+          picks.forEach(function(ci, k){ mx = Math.max(mx, Math.abs(cols[ci] - list[k].p[0]) * W); });
+          if (mx < bestMax) { bestMax = mx; best = picks.slice(); }
+          return;
+        }
+        for (var ci = 0; ci < cols.length; ci++) {
+          if (counts[ci] >= cap) continue;
+          counts[ci]++; picks.push(ci);
+          rec(i + 1, counts, picks);
+          picks.pop(); counts[ci]--;
+        }
+      })(0, cols.map(function(){ return 0; }), []);
+      list.forEach(function(d, i){ d.t = [cols[best[i]], d.p[1]]; });
+    }
+    placeCols(EV_ITEMS.filter(function(d){ return d.stance === 'S'; }), [0.395, 0.470]);
+    placeCols(EV_ITEMS.filter(function(d){ return d.stance === 'O'; }), [0.545, 0.625]);
+    EV_ITEMS.forEach(function(d){
+      d.travel = Math.hypot((d.t[0] - d.p[0]) * W, (d.t[1] - d.p[1]) * H);
+      d.tStart = Math.max(S3.sort0, S3.sort1 - d.travel / S3.sortSpeed);
+      d.tDur = Math.max(0.001, S3.sort1 - d.tStart);
+    });
+    S3.maxTravel = +Math.max.apply(null, EV_ITEMS.map(function(d){ return d.travel; })).toFixed(1);
+    S3.maxSpeed = +Math.max.apply(null, EV_ITEMS.map(function(d){ return d.travel / d.tDur; })).toFixed(2);
+  })();
+  [3, 6, 0, 5, 2, 7, 1, 4].forEach(function(gi, k){ EV_ITEMS[gi].order = k; });
+  var EV_ELS = EV_ITEMS.map(function(d){
+    var g = symInto(itemsSvg, d.kind, rx(d.p[0]), ry(d.p[1]), FIELD.size);
+    g.style.opacity = '0';
+    return { d:d, g:g };
+  });
+  /* 焦点框（S2）：一个更亮的框在证据之间跳，体现"来回寻找" */
+  var focusBox = smk('rect', { x:0, y:0, width:rSize(100), height:rSize(100), rx:rSize(12) });
+  focusBox.style.fill = 'none';
+  focusBox.style.stroke = EV.sel;
+  focusBox.style.strokeWidth = '4';
+  focusBox.style.opacity = '0';
+  focusBox.style.filter = EV.glowSel;
+  itemsSvg.appendChild(focusBox);
+  var FOCUS_ORDER = [1, 4, 0, 6, 3];
+
+  /* ---- S3 筛网（金色网格蒙版，比原图更厚更亮） ---- */
+  var SIEVE = { w:0.320 * W, h:0.360 * H };
+  var sieveG = smk('g');
+  itemsSvg.appendChild(sieveG);
+  (function buildSieve(){
+    var W2 = SIEVE.w / 2, w2 = W2 * 0.54, h2 = SIEVE.h / 2;
+    sieveG.appendChild(smk('path', { d:'M' + (-W2) + ',' + (-h2) + ' L' + W2 + ',' + (-h2) +
+      ' L' + w2 + ',' + h2 + ' L' + (-w2) + ',' + h2 + ' Z', 'class':'p-sieve' }));
+    for (var j = 1; j <= 4; j++) {
+      var x0 = -W2 + SIEVE.w * (j / 5), xt = -w2 + (2 * w2) * (j / 5);
+      sieveG.appendChild(smk('line', { x1:x0.toFixed(1), y1:(-h2).toFixed(1), x2:xt.toFixed(1), y2:h2.toFixed(1),
+                                       'class':'p-sieve-mesh' }));
+    }
+    for (var i = 1; i <= 3; i++) {
+      var u = i / 4, hw = lerp(W2, w2, u), y = -h2 + SIEVE.h * u;
+      sieveG.appendChild(smk('line', { x1:(-hw).toFixed(1), y1:y.toFixed(1), x2:hw.toFixed(1), y2:y.toFixed(1),
+                                       'class':'p-sieve-mesh' }));
+    }
+  })();
+
+  var FIELD_STATE = { split:0, select:0, ignore:0, focus:0 };
+  function updateOpinionCards(t){
+    /* v3.5 修复：这里原先读 ITEMS.selector.dx —— 但 updateItems() 每帧开头会把所有物品的 dx 清零，
+       而卡片在 updateSelector() 之前更新，所以读到的恒为 0，「小球靠近哪侧哪侧呼吸发亮」从来没生效过
+       （两卡一直同亮：实测 3.2s 球在最左时左/右卡框透明度都是 0.847）。改成直接算当前帧的球位。 */
+    var bx = 0.104 * W * selPos(t - S1.sel0);
+    /* 15.0s 起：两张立场卡（边框 + 卡内符号 + 卡内文字）整体收缩淡出，不留残件 */
+    var ex = smoothstep(clamp01((t - S1.cardsOut) / S1.cardsDur));
+    [[cardL, 'cardL', S1.cardL, -1], [cardR, 'cardR', S1.cardR, 1]].forEach(function(pair){
+      var o = pair[0], it = ITEMS[pair[1]], at = pair[2], side = pair[3];
+      it.dx = Math.round(side * 70 * ex);
+      it.dy = 0;
+      it.k = it.k * lerp(1, 0.55, ex);
+      o.g.setAttribute('transform', 'translate(' + (it.cx + it.dx) + ',' + (it.cy + it.dy) +
+        ') scale(' + it.k.toFixed(4) + ')');
+      o.g.style.opacity = it.on.toFixed(3);
+      var u = easeOutCubic(clamp01((t - at) / S1.grow));
+      o.box.setAttribute('stroke-dasharray', o.len.toFixed(1));
+      o.box.setAttribute('stroke-dashoffset', (o.len * (1 - u)).toFixed(1));
+      /* 摆球期：小球靠近哪边，哪边边框呼吸发亮；
+         v3.5 摆完（S1.sel1）后：亮侧权重 1.2 秒内平滑归零，改为**两侧同步微弱呼吸**
+         （旧版没有这一段，球停了卡就一直是静态亮度 —— 拍板里写的"两张卡片整体微弱呼吸静止"） */
+      var prox = clamp01(1 - Math.abs(bx - side * 0.104 * W) / (0.150 * W));
+      var settle = clamp01((t - S1.sel1) / 1.20);
+      var swayBoost = prox * (0.5 + 0.5 * Math.sin(2 * Math.PI * t / 2.6)) *
+                      (t >= S1.sel0 && t < S1.sel1 ? 1 : 0) * (1 - settle);
+      var settleBreath = settle * 0.30 * (0.5 + 0.5 * Math.sin(2 * Math.PI * (t - S1.sel1) / 3.60));
+      var boost = swayBoost + settleBreath;
+      o.box.style.opacity = (it.on * clamp01((t - at) / 0.30) * (0.78 + 0.22 * boost)).toFixed(3);
+      o.box.style.stroke = 'rgba(' + Math.round(238 + 17 * boost) + ',' + Math.round(200 + 15 * boost) + ',' +
+        Math.round(112 + 48 * boost) + ',' + (0.58 + 0.42 * boost).toFixed(2) + ')';
+      o.box.style.strokeWidth = (3 + 1.6 * boost).toFixed(2);
+      o.box.style.filter = boost > 0.35 ? EV.glowSel : 'none';
+      o.syms.forEach(function(sg){
+        paintSym(sg, boost > 0.5 ? 'sel' : 'hot', it.on * u * (0.86 + 0.14 * u));
+        placeSym(sg, ((o.syms.indexOf(sg) - 0.5) * 0.092) * W, rSize(4),
+                 (0.94 + 0.10 * boost) * it.k);
+      });
+    });
+  }
+  /* v3.5 光球路点：中→左→右→中→左→右→中，每段 0.70s（两次完整往返），
+     摆完 0.80s 内漂到中心偏左 restX 停住。旧版是 sin(u*4π) 在 3.0–13.2s 里摊了 10.2 秒
+     —— 往返也是两次，但观众看到的是"一直在徘徊"。 */
+  var SEL_WP = [[0, 0], [-1, 0.70], [1, 1.40], [0, 2.10], [-1, 2.80], [1, 3.50], [0, 4.20]];
+  var SEL_END = 4.20;                     // 最后一次回中的相对时刻
+  function selPos(u){                     // u = t − S1.sel0，返回 −1..1 的归一化位置
+    if (u <= 0) return 0;
+    if (u >= SEL_END) {                   // 摆完 → 停到中间偏左
+      return lerp(0, S1.restX, smoothstep(clamp01((u - SEL_END) / 0.80)));
+    }
+    for (var i = 1; i < SEL_WP.length; i++) {
+      if (u <= SEL_WP[i][1]) {
+        var seg = (u - SEL_WP[i - 1][1]) / (SEL_WP[i][1] - SEL_WP[i - 1][1]);
+        return lerp(SEL_WP[i - 1][0], SEL_WP[i][0], smoothstep(clamp01(seg)));
+      }
+    }
+    return 0;
+  }
+  function updateSelector(t){
+    var it = ITEMS.selector;
+    var A = 0.104 * W;
+    var x = it.cx + A * selPos(t - S1.sel0);
+    var swaying = t <= S1.sel1;
+    var bob = (swaying ? 5 : 3) * Math.sin(2 * Math.PI * t / 3.4);
+    it.dx = Math.round(x - it.cx); it.dy = Math.round(bob);
+    selG.setAttribute('transform', 'translate(' + x.toFixed(1) + ',' + (it.cy + bob).toFixed(1) + ')');
+    selG.style.opacity = (clamp01((t - S1.sel0) / 0.5) * it.on *
+      (1 - smoothstep(clamp01((t - S1.cardsOut) / S1.cardsDur)))).toFixed(3);
+    var pulse = 0.5 + 0.5 * Math.sin(2 * Math.PI * t / 2.6);
+    /* 停住后呼吸幅度收小：7 → 4.5px（相位连续，不会跳变） */
+    selHalo.setAttribute('r', (rSize(26) + rSize(swaying ? 7 : 4.5) * pulse).toFixed(2));
+    selHalo.style.opacity = (0.35 + 0.35 * pulse).toFixed(3);
+  }
+  /* ---- S2 搜索环：17.1–22.4 空画布期唯一的图形动作（"大脑开始搜寻证据"） ---- */
+  var SEARCH_R = { cx:0.5 * W, cy:0.455 * H, r0:150, r1:80 };
+  var searchRing = smk('circle', { cx:SEARCH_R.cx, cy:SEARCH_R.cy, r:rSize(SEARCH_R.r0) });
+  searchRing.style.fill = 'none';
+  searchRing.style.stroke = 'rgba(255,215,102,.55)';
+  searchRing.style.strokeWidth = '2.4';
+  searchRing.style.strokeDasharray = '12 16';
+  searchRing.style.opacity = '0';
+  searchRing.style.filter = EV.glowHot;
+  itemsSvg.appendChild(searchRing);
+  var searchDot = smk('circle', { cx:SEARCH_R.cx, cy:SEARCH_R.cy, r:rSize(6) });
+  searchDot.style.fill = 'rgba(255,215,102,.85)';
+  searchDot.style.opacity = '0';
+  itemsSvg.appendChild(searchDot);
+  function updateSearch(t){
+    var it = ITEMS.field;
+    var u = clamp01((t - S2.search) / Math.max(0.001, S2.dot0 - S2.search));
+    var a = smoothstep(clamp01((t - S2.search) / 0.8)) *
+            (1 - smoothstep(clamp01((t - (S2.dot0 - 0.8)) / 0.8)));
+    var r = rSize(SEARCH_R.r0) - rSize(SEARCH_R.r0 - SEARCH_R.r1) * easeOutCubic(u);
+    searchRing.setAttribute('r', r.toFixed(1));
+    searchRing.setAttribute('transform', 'rotate(' + (t * 24).toFixed(1) + ' ' +
+      SEARCH_R.cx + ' ' + SEARCH_R.cy + ')');
+    searchRing.style.opacity = (it.on * a * 0.85).toFixed(3);
+    searchDot.setAttribute('r', (rSize(4) + rSize(4) * (0.5 + 0.5 * Math.sin(2 * Math.PI * t / 2.2))).toFixed(2));
+    searchDot.style.opacity = (it.on * a * 0.9).toFixed(3);
+  }
+  function updateField(t){
+    var it = ITEMS.field;
+    var selU = smoothstep(clamp01((t - S3.sel0) / (S3.dim0 - S3.sel0)));
+    var dimU = smoothstep(clamp01((t - S3.dim0) / (S3.dim1 - S3.dim0)));
+    /* 焦点框：先在五个证据之间跳（只高亮，不带动文字位置） */
+    var fs = S2.scan0, fe = S2.scan1, span = (fe - fs) / FOCUS_ORDER.length;
+    var idx = Math.min(FOCUS_ORDER.length - 2, Math.max(0, Math.floor((t - fs) / span)));
+    var inSeg = (t - fs) - idx * span;
+    var hold = span * 0.55;
+    var jj = easeOutCubic(clamp01((inSeg - hold) / Math.max(0.001, span - hold)));
+    var focusIdx = -1, focusK = 0;
+    if (t >= fs && t <= fe) {
+      focusIdx = jj < 0.5 ? FOCUS_ORDER[idx] : FOCUS_ORDER[idx + 1];
+      var fIn = smoothstep(clamp01((t - fs) / 0.30));
+      var fOut = 1 - smoothstep(clamp01((t - (fe - 0.5)) / 0.5));
+      focusK = fIn * fOut;
+    }
+    var moved = 0;
+    var gL = { x:0, y:0, n:0 }, gR = { x:0, y:0, n:0 };
+    EV_ELS.forEach(function(ce){
+      var d = ce.d, mv = 0;
+      if (t > d.tStart && d.travel > 0.5) mv = smoothstep(clamp01((t - d.tStart) / d.tDur));
+      moved = Math.max(moved, mv);
+      var px = lerp(d.p[0], d.t[0], mv) * W, py = lerp(d.p[1], d.t[1], mv) * H;
+      var T = S2.dot0 + d.order * S2.dotStep;
+      var u = clamp01((t - T) / 0.50), sc = lerp(0.40, 1.00, easeOutBack(u));
+      d.cx = rx(lerp(d.p[0], d.t[0], mv) * 1); d.cy = ry(lerp(d.p[1], d.t[1], mv));
+      var state = 'hot', op = it.on * smoothstep(clamp01(u / 0.6));
+      if (d.stance === 'S') {
+        state = selU > 0.5 ? 'sel' : 'hot';
+        sc *= 1 + 0.10 * selU;
+      } else {
+        state = dimU > 0.5 ? 'dim' : 'hot';
+        op *= lerp(1, 0.34, dimU);
+        sc *= lerp(1, 0.92, dimU);
+      }
+      placeSym(ce.g, px, py, Math.min(sc, 1.14));
+      paintSym(ce.g, state, op);
+      /* 文字绑定：把符号的真实位移/缩放写回 item —— 挂在它身上的标签自然跟着走 */
+      var ei = EV_ITEMS.indexOf(d);
+      var itv = ITEMS['ev' + (ei + 1)];
+      if (itv) {
+        itv.dx = Math.round(px - itv.cx);
+        itv.dy = Math.round(py - itv.cy);
+        itv.k = 1 + (Math.min(sc, 1.14) - 1) * 0.35;
+        /* 焦点扫到它 → 符号与它的文字一起亮（只改亮度，不动位置） */
+        if (ei === focusIdx && focusK > 0.02) {
+          itv.light = Math.max(itv.light, 1 - (1 - itv.light) * (1 - focusK));
+        }
+      }
+      var g2 = d.stance === 'S' ? gL : gR;
+      g2.x += px; g2.y += py; g2.n++;
+    });
+    /* 分组标签跟随各自那一堆的中心（S3 分流全程） */
+    if (gL.n) {
+      var kz = ITEMS.keepZone, dz = ITEMS.dropZone;
+      var clx = gL.x / gL.n, cly = gL.y / gL.n, crx = gR.x / gR.n, cry = gR.y / gR.n;
+      kz.dx = Math.round(clx - kz.cx); kz.dy = Math.round(cly - kz.cy);
+      dz.dx = Math.round(crx - dz.cx); dz.dy = Math.round(cry - dz.cy);
+      S3.clusterL = [Math.round(clx), Math.round(cly)];
+      S3.clusterR = [Math.round(crx), Math.round(cry)];
+    }
+    FIELD_STATE.split = +moved.toFixed(3);
+    FIELD_STATE.select = +selU.toFixed(3);
+    FIELD_STATE.ignore = +dimU.toFixed(3);
+    var a = EV_ITEMS[FOCUS_ORDER[idx]], b = EV_ITEMS[FOCUS_ORDER[idx + 1]];
+    a = a || EV_ITEMS[FOCUS_ORDER[0]]; b = b || a;
+    var fx = lerp(a.p[0], b.p[0], jj) * W, fy = lerp(a.p[1], b.p[1], jj) * H;
+    focusBox.setAttribute('x', (fx - rSize(50)).toFixed(1));
+    focusBox.setAttribute('y', (fy - rSize(50)).toFixed(1));
+    var fop = (t >= fs && t <= fe)
+      ? smoothstep(clamp01((t - fs) / 0.30)) * (1 - smoothstep(clamp01((t - (fe - 0.5)) / 0.5))) : 0;
+    focusBox.style.opacity = fop.toFixed(3);
+    FIELD_STATE.focus = +fop.toFixed(3);
+  }
+  function updateSieve(t){
+    var it = ITEMS.sieve;
+    var u = easeOutCubic(clamp01((t - S3.sieve) / 2.20));
+    it.dy = Math.round(lerp(-Math.round(0.240 * H), 0, u));
+    sieveG.setAttribute('transform',
+      'translate(' + (it.cx + it.dx) + ',' + (it.cy + it.dy) + ') scale(' + (0.94 + 0.06 * u).toFixed(3) + ')');
+    sieveG.style.opacity = (it.on * easeOutCubic(clamp01((t - S3.sieve) / 0.60))).toFixed(3);
+  }
+
+  /* ============================================================
+     7b · S4–S8 母题：分隔与蒙版 / 四节点流程链 / 三场景 / 大脑双标 / 自检框
+     ============================================================ */
+  /* ---- S4：竖线切开留下的 / 滤掉的 + 高亮框 + 暗蒙版 ---- */
+  var s4G = smk('g');
+  itemsSvg.appendChild(s4G);
+  var divider = smk('line', { x1:(0.5 * W), y1:(0.300 * H), x2:(0.5 * W), y2:(0.300 * H) });
+  divider.style.stroke = EV.hot; divider.style.strokeWidth = '4'; divider.style.opacity = '0';
+  divider.style.filter = EV.glowHot;
+  s4G.appendChild(divider);
+  var frameL = smk('rect', { x:(0.383 * W), y:(0.333 * H), width:(0.120 * W), height:(0.216 * H), rx:(0.022 * W) });
+  frameL.style.fill = 'none'; frameL.style.stroke = EV.sel; frameL.style.strokeWidth = '4';
+  frameL.style.opacity = '0'; frameL.style.filter = EV.glowSel;
+  s4G.appendChild(frameL);
+  var maskR = smk('rect', { x:(0.505 * W), y:(0.333 * H), width:(0.114 * W), height:(0.216 * H), rx:(0.022 * W) });
+  maskR.style.fill = 'rgba(8,8,8,.62)'; maskR.style.stroke = 'rgba(138,117,64,.55)'; maskR.style.strokeWidth = '2';
+  maskR.style.opacity = '0';
+  s4G.appendChild(maskR);
+  function updateStage4(t){
+    var it = ITEMS.divider;
+    var u = easeOutCubic(clamp01((t - S4.matrix) / 1.20));
+    var yTop = 0.300 * H, yBot = 0.552 * H;
+    divider.setAttribute('y2', lerp(yTop, yBot, u).toFixed(1));
+    divider.style.opacity = (it.on * clamp01((t - S4.matrix) / 0.30)).toFixed(3);
+    frameL.style.opacity = (it.on * smoothstep(clamp01((t - S4.frame) / 0.8)) * 0.95).toFixed(3);
+    maskR.style.opacity = (it.on * smoothstep(clamp01((t - S4.frame) / 0.8)) * 0.85).toFixed(3);
+  }
+
+  /* ---- S5：四节点流程链（预设立场 → 主动找支持 → 忽略相反 → 偏见加固） ---- */
+  var FLOW = {
+    y: 0.470, r: 0.030,
+    nodes: [
+      { x:0.200, kind:'stance',    cap:'预设立场' },
+      { x:0.400, kind:'magnifier', cap:'只找支持' },
+      { x:0.600, kind:'check',     cap:'忽略相反' },
+      { x:0.800, kind:'brain',     cap:'偏见加固' }
+    ]
+  };
+  var flowG = smk('g');
+  itemsSvg.appendChild(flowG);
+  var flowRail = [];
+  for (var fi = 0; fi < 3; fi++) {
+    var ln = smk('line', { x1:(FLOW.nodes[fi].x * W + FLOW.r * W * 0.9), y1:(FLOW.y * H),
+                           x2:(FLOW.nodes[fi + 1].x * W - FLOW.r * W * 0.9), y2:(FLOW.y * H) });
+    ln.style.stroke = 'rgba(255,215,102,.55)'; ln.style.strokeWidth = '2.4'; ln.style.opacity = '0';
+    flowG.appendChild(ln); flowRail.push(ln);
+  }
+  var flowNodes = FLOW.nodes.map(function(n){
+    var g = smk('g');
+    var ring = smk('circle', { cx:(n.x * W), cy:(FLOW.y * H), r:(FLOW.r * W) });
+    ring.style.fill = 'rgba(12,11,9,.85)';
+    ring.style.stroke = EV.hot; ring.style.strokeWidth = '1.8'; ring.style.opacity = '0';
+    g.appendChild(ring);
+    var ic = symInto(g, n.kind, n.x * W, FLOW.y * H, 62);
+    ic.style.opacity = '0';
+    flowG.appendChild(g);
+    return { g:g, ring:ring, ic:ic };
+  });
+  /* 方向光带：从左向右穿过节点，强化"过程有方向" */
+  (function buildFlowBand(){
+    var defs = smk('defs');
+    var lg = smk('linearGradient', { id:'flowGrad', x1:'0', y1:'0', x2:'1', y2:'0' });
+    [['0','255,215,102,0'], ['0.5','255,231,180,0.55'], ['1','255,215,102,0']].forEach(function(st){
+      var pp = st[1].split(',');
+      lg.appendChild(smk('stop', { offset:st[0],
+        'stop-color':'rgb(' + pp[0] + ',' + pp[1] + ',' + pp[2] + ')', 'stop-opacity':pp[3] }));
+    });
+    defs.appendChild(lg);
+    itemsSvg.appendChild(defs);
+  })();
+  var flowBand = smk('rect', { x:0, y:(FLOW.y * H - 0.075 * H), width:(0.085 * W), height:(0.150 * H), fill:'url(#flowGrad)' });
+  flowBand.style.opacity = '0';
+  flowG.appendChild(flowBand);
+  function updateFlow(t){
+    var it = ITEMS.flow;
+    flowRail.forEach(function(ln, i){
+      ln.style.opacity = (it.on * smoothstep(clamp01((t - (S5.flow + 0.4 + i * 0.7)) / 0.7)) * 0.9).toFixed(3);
+    });
+    flowNodes.forEach(function(fn, i){
+      var at = S5.node0 + i * S5.nodeStep;
+      var u = smoothstep(clamp01((t - at) / 0.6));
+      var breathe = 0.86 + 0.14 * (0.5 + 0.5 * Math.sin(2 * Math.PI * (t - at) / 3.2));
+      fn.ring.style.opacity = (it.on * u * 0.95).toFixed(3);
+      fn.ring.style.stroke = u > 0.5 ? EV.sel : EV.hot;
+      fn.ring.style.filter = u > 0.5 ? EV.glowSel : 'none';
+      paintSym(fn.ic, u > 0.5 ? 'sel' : 'hot', it.on * u * breathe);
+    });
+    var bu = clamp01((t - (S5.node0 + 1.2)) / 3.6);
+    if (t >= S5.node0 + 1.2 && t <= S5.note + 0.5) {
+      flowBand.setAttribute('x', (0.150 * W + bu * 0.700 * W).toFixed(1));
+      flowBand.style.opacity = (it.on * smoothstep(clamp01((t - (S5.node0 + 1.2)) / 0.6)) *
+        (1 - smoothstep(clamp01((t - (S5.note - 0.4)) / 0.9))) * 0.9).toFixed(3);
+    } else flowBand.style.opacity = '0';
+  }
+
+  /* ---- S6：三场景（信息茧房 / 争论对立 / 投资判断）+ 每场景一次小筛子过滤 ---- */
+  var SCENES = [
+    { x:0.220, kind:'phone', kept:['arrowUp', 'check'], drop:['cross', 'question'] },
+    { x:0.500, kind:'people', kept:['check', 'arrowUp'], drop:['cross', 'brokenScales'] },
+    { x:0.780, kind:'kline', kept:['arrowUp', 'check'], drop:['question', 'cross'] }
+  ];
+  var scenG = smk('g');
+  itemsSvg.appendChild(scenG);
+  var SCEN_ELS = SCENES.map(function(sc){
+    var main = symInto(scenG, sc.kind, sc.x * W, 0.400 * H, 150);
+    main.style.opacity = '0';
+    var sie = symInto(scenG, 'sieve', sc.x * W, 0.575 * H, 54);
+    sie.style.opacity = '0';
+    var tiny = [];
+    ['kept0', 'kept1', 'drop0', 'drop1'].forEach(function(tag, i){
+      var kind = i < 2 ? sc.kept[i] : sc.drop[i - 2];
+      var px = (sc.x + (i - 1.5) * 0.036) * W;
+      var g = symInto(scenG, kind, px, 0.665 * H, 38);
+      g.style.opacity = '0';
+      tiny.push({ g:g, keep:i < 2 });
+    });
+    return { sc:sc, main:main, sie:sie, tiny:tiny };
+  });
+  var SCATTER2 = [
+    { x:0.070, y:0.140, kind:'scales' }, { x:0.150, y:0.215, kind:'question' },
+    { x:0.930, y:0.140, kind:'check' }, { x:0.860, y:0.215, kind:'arrowUp' },
+    { x:0.070, y:0.300, kind:'cross' }, { x:0.930, y:0.300, kind:'ripple' }
+  ].map(function(s){
+    var g = symInto(scenG, s.kind, s.x * W, s.y * H, 44);
+    g.style.opacity = '0';
+    return { g:g, x:s.x, y:s.y };
+  });
+  function updateScenes(t){
+    SCEN_ELS.forEach(function(se, i){
+      var ev = [S6.A, S6.B, S6.C][i];
+      var it = ITEMS['main' + 'ABC'.charAt(i)];
+      var u = smoothstep(clamp01((t - ev) / 0.7));
+      var breathe = 0.88 + 0.12 * (0.5 + 0.5 * Math.sin(2 * Math.PI * (t - ev) / 3.4));
+      paintSym(se.main, u > 0.5 ? 'sel' : 'hot', it.on * u * breathe);
+      se.sie.style.opacity = (it.on * u * 0.85).toFixed(3);
+      se.tiny.forEach(function(tn, k){
+        var tu = smoothstep(clamp01((t - (ev + 0.7 + k * 0.35)) / 0.5));
+        var target = tn.keep ? 1 : 0.22;
+        var op = lerp(0.55, target, tu);
+        paintSym(tn.g, tn.keep ? 'sel' : 'dim', it.on * op);
+      });
+    });
+    SCATTER2.forEach(function(s, i){
+      var u = clamp01((t - (S6.scat0 + i * S6.scatStep)) / 0.8);
+      s.g.style.opacity = (smoothstep(u) * (ITEMS.mainA.on + ITEMS.mainC.on) / 2 * 0.30).toFixed(3);
+    });
+  }
+
+  /* ---- S7：大脑 + 四条处理路径 + 被吸收 / 被弹开的证据 ---- */
+  var brainG = smk('g');
+  itemsSvg.appendChild(brainG);
+  var brainIcon = symInto(brainG, 'brain', 0.500 * W, 0.310 * H, 150);
+  brainIcon.style.opacity = '0';
+  var BNODE = [ { x:0.200, y:0.560 }, { x:0.400, y:0.610 }, { x:0.600, y:0.610 }, { x:0.800, y:0.560 } ];
+  var bPaths = BNODE.map(function(n){
+    var p = smk('path', { d:'M' + (0.500 * W) + ',' + (0.310 * H + 70) + ' Q' +
+      ((0.500 + n.x) / 2 * W) + ',' + (n.y * H) + ' ' + (n.x * W) + ',' + (n.y * H) });
+    p.style.fill = 'none'; p.style.stroke = 'rgba(255,215,102,.42)'; p.style.strokeWidth = '2.4';
+    p.style.opacity = '0';
+    brainG.appendChild(p);
+    return p;
+  });
+  var bNodes = BNODE.map(function(n){
+    var c = smk('circle', { cx:(n.x * W), cy:(n.y * H), r:(0.020 * W) });
+    c.style.fill = 'rgba(12,11,9,.85)'; c.style.stroke = EV.hot; c.style.strokeWidth = '2';
+    c.style.opacity = '0';
+    brainG.appendChild(c);
+    return c;
+  });
+  /* 证据的双标处理：左侧被吸收（上浮 + 变亮），右侧被弹开（下沉 + 变暗） */
+  var BSYM = [
+    { x:0.300, kind:'check',     keep:true }, { x:0.380, kind:'arrowUp', keep:true },
+    { x:0.460, kind:'shield',    keep:true },
+    { x:0.540, kind:'cross',     keep:false }, { x:0.620, kind:'question', keep:false },
+    { x:0.700, kind:'brokenScales', keep:false }
+  ].map(function(s){
+    var g = symInto(brainG, s.kind, s.x * W, 0.740 * H, 40);
+    g.style.opacity = '0';
+    return { g:g, keep:s.keep, x:s.x };
+  });
+  function updateBrain(t){
+    var it = ITEMS.brain;
+    var u = smoothstep(clamp01((t - S7.brain) / 0.9));
+    var breathe = 0.94 + 0.06 * (0.5 + 0.5 * Math.sin(2 * Math.PI * (t - S7.brain) / 4.2));
+    paintSym(brainIcon, 'sel', it.on * u * breathe);
+    bPaths.forEach(function(p, i){
+      p.style.opacity = (it.on * smoothstep(clamp01((t - (S7.brain + 0.5 + i * 0.5)) / 0.8)) * 0.95).toFixed(3);
+    });
+    bNodes.forEach(function(c, i){
+      var at = S7.node[i];
+      var nu = smoothstep(clamp01((t - at) / 0.6));
+      c.style.opacity = (it.on * nu).toFixed(3);
+      c.style.stroke = nu > 0.5 ? EV.sel : EV.hot;
+      c.style.filter = nu > 0.5 ? EV.glowSel : 'none';
+    });
+    var du = clamp01((t - S7.node[1]) / (S7.node[3] + 2 - S7.node[1]));
+    BSYM.forEach(function(b, i){
+      var at = S7.node[1] + i * 0.35;
+      var bu = smoothstep(clamp01((t - at) / 0.8));
+      var dy = (b.keep ? -1 : 1) * 30 * du;
+      var dx = (b.keep ? 1 : 1) * 26 * du;
+      placeSym(b.g, (b.x * W) + dx, (0.740 * H) + dy, b.keep ? (0.9 + 0.16 * du) : (0.94 - 0.10 * du));
+      paintSym(b.g, b.keep ? (bu > 0.5 ? 'sel' : 'hot') : 'dim',
+               it.on * bu * (b.keep ? lerp(0.45, 1.0, du) : lerp(0.85, 0.24, du)));
+    });
+  }
+
+  /* ---- S8：粒子汇线 + 标题卡 + 自检框 + 左右对照证据 ---- */
+  var endG = smk('g');
+  itemsSvg.appendChild(endG);
+  var qlineEl = smk('line', { x1:0, y1:(0.600 * H), x2:0, y2:(0.600 * H) });
+  qlineEl.style.stroke = 'rgba(255,215,102,.60)'; qlineEl.style.strokeWidth = '2';
+  qlineEl.style.opacity = '0';
+  endG.appendChild(qlineEl);
+  var selfFrame = smk('rect', { x:(0.150 * W), y:(0.292 * H), width:(0.700 * W), height:(0.186 * H), rx:(0.018 * W) });
+  selfFrame.style.fill = 'none'; selfFrame.style.stroke = EV.sel; selfFrame.style.strokeWidth = '5';
+  selfFrame.style.opacity = '0'; selfFrame.style.filter = 'drop-shadow(0 0 26px rgba(255,176,32,.75))';
+  endG.appendChild(selfFrame);
+  var titleCard = smk('rect', { x:(0.398 * W), y:(0.048 * H), width:(0.204 * W), height:(0.150 * H), rx:(0.016 * W) });
+  titleCard.style.fill = 'rgba(10,10,10,.55)'; titleCard.style.stroke = EV.hot; titleCard.style.strokeWidth = '3';
+  titleCard.style.opacity = '0';
+  endG.appendChild(titleCard);
+  var ESYM = [];
+  [['check', 0.120, true], ['arrowUp', 0.200, true], ['shield', 0.280, true],
+   ['cross', 0.720, false], ['question', 0.800, false], ['brokenScales', 0.880, false]]
+    .forEach(function(d){
+      var g = symInto(endG, d[0], d[1] * W, 0.575 * H, 44);
+      g.style.opacity = '0';
+      ESYM.push({ g:g, keep:d[2], x:d[1] });
+    });
+  function updateEnd(t){
+    var it = ITEMS.qline;
+    var g = easeOutCubic(clamp01((t - S8.line) / 2.00));
+    var x0 = 0.14 * W, x1 = 0.86 * W, y = 0.600 * H;
+    qlineEl.setAttribute('x1', x0);
+    qlineEl.setAttribute('x2', (x0 + (x1 - x0) * g).toFixed(1));
+    qlineEl.setAttribute('y1', y); qlineEl.setAttribute('y2', y);
+    qlineEl.style.opacity = (it.on * (0.55 + 0.45 * g)).toFixed(3);
+    var fi = ITEMS.selfFrame;
+    titleCard.style.opacity = (fi.on * smoothstep(clamp01((t - S8.title) / 0.7)) * 0.9).toFixed(3);
+    selfFrame.style.opacity = (fi.on * smoothstep(clamp01((t - S8.frame) / 0.8)) * 0.95).toFixed(3);
+    ESYM.forEach(function(e, i){
+      var at = S8.frame + 0.4 + i * 0.22;
+      var u = smoothstep(clamp01((t - at) / 0.6));
+      paintSym(e.g, e.keep ? (u > 0.5 ? 'sel' : 'hot') : 'dim', fi.on * u * (e.keep ? 1 : 0.45));
+    });
+  }
+  function updateQline(t){ /* S8 汇线已并入 updateEnd（保留函数名以兼容旧钩子） */ }
+  /* ============================================================
+     8 · 文本分片渲染（含 LightLink 扫光联动）
+     ============================================================ */
+  var pieceEls = [];
+  PIECES.forEach(function(p, i){
+    var cls = 'lv-' + p.lv.toLowerCase();
+    if (p.kai) cls += ' kai';
+    if (p.tag) cls += ' tag';
+    if (p.vert) cls += ' vert';
+    if (p.nowrap) cls += ' nowrap';
+    if (p.metal) cls += ' metal';
+    if (p.pad) cls += ' pad';           // v2.2：贴着动态图形的标签 → 本地薄黑衬底
+    var el = mk('div', 'piece ' + cls, { left:p.x + 'px', top:p.y + 'px' });
+    el.setAttribute('data-screen', p.s);
+    el.setAttribute('data-lv', p.lv);
+    el.setAttribute('data-index', i);
+    if (p.fs) el.style.fontSize = p.fs + 'px';
+    if (p.lh) el.style.lineHeight = p.lh;
+    if (p.w) el.style.width = p.w + 'px';
+    if (p.h) el.style.height = p.h + 'px';
+    if (p.c) el.style.color = p.c;
+    /* 楷体自带的 .14em 字距会把 L3 整行拉宽（会撞到邻块），这里压回 .08em：
+       字形气质变楷体，但行宽与改造前一致 → 不会引发新的盒重叠 */
+    if (p.kai && p.lv === 'L3') el.style.letterSpacing = '.08em';
+    var scaler = mk('span', 'sc');
+    if (p.stagger) {
+      /* 逐字入场：片内按字拆 span 并错开；片级 opacity 与时序不变 → 体检口径不受影响 */
+      scaler.textContent = '';
+      p.t.split('').forEach(function(ch){
+        var cs = document.createElement('span');
+        cs.textContent = ch;
+        cs.style.display = 'inline-block';
+        cs.style.willChange = 'opacity,transform';
+        scaler.appendChild(cs);
+      });
+    } else {
+      scaler.textContent = p.t;
+    }
+    if (p.tag) { el.appendChild(mk('i')); el.appendChild(scaler); }
+    else el.appendChild(scaler);
+    textsRoot.appendChild(el);
+    pieceEls.push({ rec:p, el:el, scaler:scaler, x:p.x, y:p.y, w:0, h:0, cx:p.x, cy:p.y });
+  });
+  function measurePieces(){
+    pieceEls.forEach(function(rec){
+      rec.w = rec.el.offsetWidth; rec.h = rec.el.offsetHeight;
+      rec.cx = rec.x + rec.w / 2; rec.cy = rec.y + rec.h / 2;
+    });
+  }
+  /* ==================================================================
+     v2.3 修复：单行文字被 max-width 截住 → 金属字末字丢填充
+     现象：S4 命名卡「幸存者偏差」的「差」显示不全（S7/S8 各有一片同症）。
+     成因：`.piece{ max-width:845px }` 只管住**盒**，不管住字形；
+           `background-clip:text` 的金属字，盒外没有 background 可裁 →
+           字形越出盒子的那一段只剩 .6px 暗描边 → 看起来就是"被切掉"。
+     修法（只放宽盒子，字形一个像素都不动）：内容比盒宽、且没有发生换行（单行溢出）时，
+           把盒子放到 max-content。`left` 不变 → 字形位置不变，只是让渐变盖住整行。
+     校验：`node tools/textbox-check.mjs survivorship-bias.html` 必须 0 片 X 溢出。
+     ================================================================== */
+  pieceEls.forEach(function(rec){
+    var el = rec.el;
+    if (rec.rec.w) return;                                  // 显式定宽的片不动
+    if (el.scrollWidth <= el.clientWidth + 1) return;        // 没有横向溢出 → 不关它的事
+    /* 是否换过行：用 Range 数"行盒"个数（竖向溢出大多是 em 盒/行高，不是字形被切，
+       所以不能用 scrollHeight 当判据 —— S4 标题正是"横竖都溢"，会被误判成换行而跳过） */
+    /* 是否换过行：拿"实际盒高"跟"单行行高"比。
+       （不要用 Range rects 数行 —— 逐字 span 会让 Chromium 每字返回一个 rect；
+        也不要用 scrollHeight —— L0 的 lh 1.10 < em 盒 1.245，竖向溢出是常态、无害） */
+    var lhPx = parseFloat(window.getComputedStyle(el).lineHeight) || 0;
+    if (el.getBoundingClientRect().height <= lhPx * 1.4 + 2) {  // 单行 → 放宽盒子
+      el.style.maxWidth = 'none';
+      el.style.width = 'max-content';
+    }
+  });
+  measurePieces();
+  buildLightKeys();
+
+  /* ==================================================================
+     v2-c 标签引导线：从物品引一条极细暗香槟金线到它的附着标签。
+     用途：替代做不了的「标签落位回弹」（弹入全片仅 1 处，已给 S2「加固机翼？」）；
+     引导线属 §4.5 的「结构元素」，不占呼吸/弹入配额。
+     ================================================================== */
+  var LEADERS = [];
+  pieceEls.forEach(function(rec){
+    if (!rec.rec.attach) return;
+    var ln = smk('line', { x1:0, y1:0, x2:0, y2:0 });
+    ln.style.stroke = 'rgba(200,169,100,.38)';
+    ln.style.strokeWidth = '1';
+    ln.style.opacity = '0';
+    itemsSvg.appendChild(ln);
+    LEADERS.push({ el:ln, rec:rec, item:rec.rec.attach.item, start:rec.rec.start, s:rec.rec.s });
+  });
+  function updateLeaders(t){
+    LEADERS.forEach(function(L){
+      var it = ITEMS[L.item]; if (!it) return;
+      var r = L.rec;
+      var ix = it.cx + it.dx, iy = it.cy + it.dy;
+      var lx = r.x, ly = r.y + r.h / 2;              // 标签左缘中点（标签都在物品左侧/下方）
+      var dx = lx - ix, dy = ly - iy, len = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+      var sx = ix + dx / len * rSize(46), sy = iy + dy / len * rSize(46);   // 起点：物品外缘
+      /* v3.4 修复：终点原先一律「沿线段方向退 16px」——斜向入射时该点仍落在标签盒**内**
+         （实测 S1「支持死刑」终点 (402,244) 落在字盒 x[396..611] y[197..261] 里 6px，正好戳到首字左缘）。
+         现在：仍先按原口径退 16px；若该点进盒超过 4px，就沿线段回退到「盒外 6px 切点」。
+         两条保险：进盒不足 4px 不动（S7 节点标签的终点正好压在盒边上，动了反而退化成小点）；
+         回退后若不足半段就不退（S2/S3 那批「标签紧贴物品」的短引线只有 20–50px，退完只剩 8px 残点）。 */
+      var ux = dx / len, uy = dy / len;
+      var seg = Math.max(1, len - rSize(46));        // 线段实长
+      var ex = lx - ux * rSize(16), ey = ly - uy * rSize(16);
+      var depth = Math.min(ex - r.x, r.x + r.w - ex, ey - r.y, r.y + r.h - ey);
+      if (depth > 4) {
+        var axx = ux * seg, ayy = uy * seg, t0 = 0, t1 = 1, oka = true;
+        if (Math.abs(axx) < 1e-6) { if (sx < r.x || sx > r.x + r.w) oka = false; }
+        else { var a = (r.x - sx) / axx, b = (r.x + r.w - sx) / axx;
+               if (a > b) { var m = a; a = b; b = m; }
+               if (a > t0) t0 = a; if (b < t1) t1 = b; }
+        if (oka && Math.abs(ayy) < 1e-6) { if (sy < r.y || sy > r.y + r.h) oka = false; }
+        else if (oka) { var c = (r.y - sy) / ayy, d = (r.y + r.h - sy) / ayy;
+                        if (c > d) { var m2 = c; c = d; d = m2; }
+                        if (c > t0) t0 = c; if (d < t1) t1 = d; }
+        var u = oka && t0 <= t1 ? t0 - rSize(6) / seg : Infinity;
+        if (u >= 0.5) {
+          ex = sx + axx * u; ey = sy + ayy * u;
+        }
+      }
+      /* v2.1 ④：引导线「像画线一样」从物品端生长到标签端，
+         0.60s 走完、终点与标签落位（附着标签 fade 0.20s）同帧对上 —— 标签是被线带出来的，不是凭空出现 */
+      var lg = easeOutCubic(clamp01((t - (L.start - 0.40)) / 0.60));
+      L.drawn = lg;
+      L.el.setAttribute('x1', sx.toFixed(1)); L.el.setAttribute('y1', sy.toFixed(1));
+      L.el.setAttribute('x2', (sx + (ex - sx) * lg).toFixed(1));
+      L.el.setAttribute('y2', (sy + (ey - sy) * lg).toFixed(1));
+      /* 线要比标签早 0.40s 起亮（0.25s 起亮完），否则「生长」会发生在不可见的那一段里 */
+      L.el.style.opacity = (clamp01((t - (L.start - 0.40)) / 0.25) *
+        fadeOut(t, (SCREENS[L.s] || {}).t1, OUT_LEAD) * it.on * 0.9).toFixed(3);
+    });
+  }
+
+  /* ==================================================================
+     v2.1 ⑤ 关键数字「0」的光圈凝聚（S3 47.50→48.20s，正好压在 low_impact 重音①）
+     约束：弹入 `1.00→1.02→1.00` 全片仅 1 处（已给 S2「加固机翼？」），
+     所以「0」本身**不做缩放、不做回弹**；改由一圈由外向内收缩的光环承担「凝聚」的视觉重量，
+     光环属事件类结构元素（与弹孔光圈同族），不占呼吸 / 弹入配额。
+     ================================================================== */
+  var HALF_RING = { t0:S3.half + 0.10, dur:0.70, r0:1.55, r1:1.00, base:210, op:0.50 };
+  var halfRing = smk('circle', { cx:ITEMS.half.cx, cy:ITEMS.half.cy, r:rSize(HALF_RING.base) });
+  halfRing.style.fill = 'none';
+  halfRing.style.stroke = 'rgba(215,185,121,.85)';
+  halfRing.style.strokeWidth = (1.4).toFixed(2);
+  halfRing.style.opacity = '0';
+  itemsSvg.appendChild(halfRing);
+  function updateHalfRing(t){
+    var it = ITEMS.half;
+    var u = clamp01((t - HALF_RING.t0) / HALF_RING.dur);
+    /* 半径 1.55× → 1.00×（由外向内收缩到位，不放大、不回弹） */
+    var r = rSize(HALF_RING.base) *
+            (HALF_RING.r1 + (HALF_RING.r0 - HALF_RING.r1) * (1 - easeOutCubic(u)));
+    halfRing.setAttribute('cx', (it.cx + it.dx).toFixed(1));
+    halfRing.setAttribute('cy', (it.cy + it.dy).toFixed(1));
+    halfRing.setAttribute('r', r.toFixed(1));
+    /* 透明度：0.15 内起亮 → u=0.45 峰值 → 收缩到位时收干净（重音那一刻只剩金属字本身） */
+    var env = smoothstep(clamp01(u / 0.15)) * (1 - smoothstep(clamp01((u - 0.45) / 0.55)));
+    halfRing.style.opacity = (env * HALF_RING.op).toFixed(3);
+    HALF_RING.rNow = +r.toFixed(1); HALF_RING.opNow = +(env * HALF_RING.op).toFixed(3);
+  }
+  HALF_RING.rNow = rSize(HALF_RING.base) * HALF_RING.r0; HALF_RING.opNow = 0;
+
+  function renderPiece(rec, t, L){
+    var p = rec.rec, el = rec.el, scaler = rec.scaler;
+    var fadeDur = p.attach ? 0.20 : PIECE_FADE;
+    /* 出场：默认在幕尾淡出；带 outAt 的片按自己的时刻淡出（S1 立场卡组整体退场用） */
+    var vis = fadeIn(t, p.start, fadeDur);
+    if (p.outAt != null) vis *= fadeOut(t, p.outAt, (p.outDur == null ? OUT_LEAD : p.outDur));
+    else if (!p.attach) vis *= fadeOut(t, (SCREENS[p.s] || {}).t1, OUT_LEAD);
+    var it = p.attach ? ITEMS[p.attach.item] : null;
+    var dx = 0, dy = 0, k = 1;
+    if (it) {
+      dx = p.attach.followScale ? it.dx * 1.0 : 0;
+      dy = p.attach.followScale ? it.dy * 1.0 : 0;
+      var cc = (p.attach.scaleCouple == null ? 0.04 : p.attach.scaleCouple);
+      k = p.attach.followScale ? (1 - cc + cc * it.k) : 1;
+    }
+    var inU = clamp01((t - p.start) / fadeDur);
+    var riseY = (1 - easeOutCubic(inU)) * rSize(18);
+    var blur = (1 - easeOutCubic(inU)) * 5;
+    scaler.style.filter = blur > 0.05 ? 'blur(' + blur.toFixed(2) + 'px)' : 'none';
+    var floatY = (p.attach ? 0 : Math.sin(2 * Math.PI * (t - p.start) / FLOAT_PERIOD) * rSize(6));
+    el.style.transform = 'translate(' + Math.round(dx) + 'px,' + Math.round(dy + riseY + floatY) + 'px)';
+    if (p.breathe) k *= 0.90 + 0.10 * (0.5 + 0.5 * Math.sin(2 * Math.PI * t / BREATHE_PERIOD));
+    if (p.pop) {
+      var pu = clamp01((t - p.start) / 0.9);
+      k *= pu < 0.5 ? lerp(1.00, 1.02, pu / 0.5) : lerp(1.02, 1.00, (pu - 0.5) / 0.5);
+    }
+    /* 本片唯一的弹入（S3「一半」）：0.60 → 1.00，与收缩光圈同一拍落下 */
+    if (p.popFrom != null) {
+      var pf = clamp01((t - p.start) / 0.90);
+      k *= lerp(p.popFrom, 1.00, easeOutCubic(pf));
+    }
+    scaler.style.transform = 'scale(' + k.toFixed(4) + ')';
+    var op, lf;
+    if (p.lv === 'L0' || p.lv === 'L1') {
+      op = vis;
+    } else {
+      /* 用「标签当前所在位置」采样光照，而不是静态盒心 —— 附着标签本身会跟着物品走；
+         本片 S3 的分流位移达 125px，用静态盒心会和体检脚本对不上（A31 偏差 0.04） */
+      var own = litFactor(rec.cx + dx, rec.cy + dy, L);
+      var itemLight = it ? it.light * it.on : 0;
+      var reach = Math.max(own, itemLight);
+      /* v2.2：非附着正文的渐隐下限 0.50→0.78 —— 光漫游到别处时正文只暗到 0.78，不再掉到半透明 */
+      var c = p.attach || { opMin:0.78, opMax:1.00 };
+      lf = (c.opMin + (c.opMax - c.opMin) * clamp01((reach - 0.74) / 0.26)) * (it ? it.on : 1);
+      /* 末屏（S8 收束）沿用模板惯例：金句页的文字有一层 0.94 下限，不随扫光压暗 */
+      if (p.s === SCREENS.length - 1) lf = Math.max(lf, 0.94);
+      op = lf * vis;
+      if (p.opBreathe) op *= 0.90 + 0.10 * (0.5 + 0.5 * Math.sin(2 * Math.PI * t / 12));
+    }
+    var lfOut = (lf == null ? NaN : lf);
+    if (isFinite(lfOut)) {
+      p.lf = +lfOut.toFixed(4);
+      el.setAttribute('data-lf', lfOut.toFixed(4));
+    } else {
+      p.lf = undefined;
+      el.removeAttribute('data-lf');
+    }
+    el.style.opacity = op.toFixed(3);
+    /* 逐字入场：字级错开（片级 opacity 不动，A5 拼字串与 attach/narrative 口径都不变） */
+    if (p.stagger && scaler.children && scaler.children.length) {
+      var chars = scaler.children;
+      for (var ci = 0; ci < chars.length; ci++) {
+        var cu = clamp01((t - (p.start + ci * STAGGER_STEP)) / 0.5);
+        chars[ci].style.opacity = smoothstep(cu).toFixed(3);
+        chars[ci].style.transform = 'translateY(' + ((1 - easeOutCubic(cu)) * rSize(10)).toFixed(1) + 'px)';
+      }
+    }
+    if (p.metal) {
+      var phase = 2 * Math.PI * t / 16 + (L.x - rec.x) / W * 2.2;
+      var hp = clamp01(0.5 * (1 + Math.sin(phase)));
+      el.style.backgroundPosition = '50% ' + (3 + 97 * hp).toFixed(1) + '%';
+    }
+  }
+
+  /* ============================================================
+     9 · 背景：粒子 / 射线 / 光晕 / 颗粒（全部由 t 驱动）
+     ============================================================ */
+  var bg = document.getElementById('bg'), bgc = bg.getContext('2d');
+  var grain = document.getElementById('grain'), gc = grain.getContext('2d');
+  var PR = mulberry32(20261008);
+  var PARTICLES = [];
+  for (var pi = 0; pi < 72; pi++) {
+    PARTICLES.push({ x:PR(), y:PR(), d:1 + PR() * 2, v:0.008 + PR() * 0.022,
+                     gold:PR() < 0.25, ph:PR() * 6.28, tw:0.6 + PR() });
+  }
+  /* 封面抽板：只画背景引擎层（射线 / 光晕 / 粒子 / 颗粒），不画母题与文字。
+     dim 压粒子亮度（封面用 0.35），coreBoxes 里的粒子直接不画（"核心区不画粒子"，不是事后擦）。 */
+  var PLATE = { on:false, dim:1, boxes:null };
+  function inCore(q, boxes){
+    if (!boxes) return false;
+    for (var i = 0; i < boxes.length; i++) {
+      var b = boxes[i];
+      if (q[0] >= b[0] && q[0] <= b[1] && q[1] >= b[2] && q[1] <= b[3]) return true;
+    }
+    return false;
+  }
+  function drawBg(t, L, pScale, coreBoxes){
+    var ps = (pScale == null ? 1 : pScale);
+    bgc.clearRect(0, 0, W, H);
+    var si = screenAt(t), sc = SCREENS[si] || SCREENS[0];
+    /* ① 极淡射线（14 条，整组 0.25°/s，透明度上限 .055） */
+    var rayA = (t * 0.25) * Math.PI / 180, n = 14;
+    /* 抽板模式：射线起点外推 90px —— 14 条射线叠在光源原点会形成一颗 ≈0.78 的亮核，
+       封面里正好落在「0」的空心里，属于背景板的缺陷，直接在绘制阶段去掉而不是事后擦 */
+    var r0 = PLATE.on ? rSize(90) : 0;
+    for (var i = 0; i < n; i++) {
+      var a = rayA + i * (Math.PI * 2 / n);
+      var len = 1250 * kH() + 260 * kH() * Math.sin(i * 1.7 + t * 0.11);
+      var sx = L.x + Math.cos(a) * r0, sy = L.y + Math.sin(a) * r0;
+      var g = bgc.createLinearGradient(sx, sy, L.x + Math.cos(a) * len, L.y + Math.sin(a) * len);
+      g.addColorStop(0, 'rgba(215,185,121,' + (0.055 * sc.bg.rays).toFixed(4) + ')');
+      g.addColorStop(1, 'rgba(215,185,121,0)');
+      bgc.strokeStyle = g; bgc.lineWidth = 1.4 * kH();
+      bgc.beginPath(); bgc.moveTo(sx, sy);
+      bgc.lineTo(L.x + Math.cos(a) * len, L.y + Math.sin(a) * len); bgc.stroke();
+    }
+    /* ② 棕金光晕（呼吸周期 >30s，上限 .085） */
+    var pulse = 0.72 + 0.28 * Math.sin(2 * Math.PI * t / 38);
+    var rg = bgc.createRadialGradient(L.x, L.y, 0, L.x, L.y, 820 * kH());
+    rg.addColorStop(0, 'rgba(107,74,26,' + (0.085 * sc.bg.glow * pulse).toFixed(4) + ')');
+    rg.addColorStop(1, 'rgba(107,74,26,0)');
+    bgc.fillStyle = rg; bgc.beginPath(); bgc.arc(L.x, L.y, 820 * kH(), 0, 6.284); bgc.fill();
+    /* ③ 随机粒子（72 个，透明度 ≤0.15） */
+    /* S8 收束：粒子向心汇聚成一条水平线（126.0s 起 2.0s 内收敛） */
+    var cv = smoothstep(clamp01((t - S8.line) / 2.00));
+    for (var p2 = 0; p2 < PARTICLES.length; p2++) {
+      var q = PARTICLES[p2];
+      var y = (q.y - (t * q.v)) % 1; if (y < 0) y += 1;
+      var px = q.x, py = y;
+      if (cv > 0) {
+        px = lerp(px, 0.50 + (q.x - 0.50) * 0.55, cv);
+        py = lerp(py, 0.60 + (q.y - 0.50) * 0.02, cv);
+      }
+      if (inCore([px, py], coreBoxes)) continue;
+      var al = (0.06 + 0.09 * (0.5 + 0.5 * Math.sin(t * q.tw + q.ph))) * ps;
+      bgc.fillStyle = q.gold ? 'rgba(215,185,121,' + Math.min(al, 0.15).toFixed(3) + ')'
+                             : 'rgba(245,241,232,' + Math.min(al * 0.7, 0.12).toFixed(3) + ')';
+      bgc.beginPath(); bgc.arc(px * W, py * H, q.d * kH(), 0, 6.284); bgc.fill();
+    }
+  }
+  var lastGrain = -1;
+  function drawGrain(t){
+    /* 胶片颗粒：≤5%、12 次/秒跳变（不逐帧重画，避免码率暴涨） */
+    var step = Math.floor(t * 12);
+    if (step === lastGrain) return;
+    lastGrain = step;
+    var r = mulberry32(step * 7919);
+    gc.clearRect(0, 0, W, H);
+    gc.globalAlpha = 0.035;
+    for (var i = 0; i < 1400; i++) {
+      var x = r() * W, y = r() * H, s = 1 + r() * 1.6;
+      gc.fillStyle = r() < 0.5 ? '#ffffff' : '#000000';
+      gc.fillRect(x, y, s, s);
+    }
+    gc.globalAlpha = 1;
+  }
+  function screenAt(t){
+    for (var i = SCREENS.length - 1; i >= 0; i--) if (t >= SCREENS[i].t0) return i;
+    return 0;
+  }
+
+  /* ============================================================
+     10 · 音效（事件表 + 采样级调度；时刻全部取自节拍表）
+     ============================================================ */
+  var SFX_DEF = {
+    soft_tick:{ file:'audio/soft_tick.wav', min:0.18 },
+    swish_soft:{ file:'audio/swish_soft.wav', min:0.35 },
+    low_impact:{ file:'audio/low_impact.wav', min:1.50 },
+    pulse_tap:{ file:'audio/pulse_tap.wav', min:0.30 },
+    sub_rise:{ file:'audio/sub_rise.wav', min:1.00 },
+    blank:{ file:'audio/blank.wav', min:0 }
+  };
+  /* 13 条（S1 4 · S2 3 · S3 6）· 重音全片仅 3 处，本段出现 1 处（S3 的「0」） */
+  var SFX_EVENTS = [
+    { t:S1.cardL, id:'swish_soft', dB:-18, pri:2 },      // S1 左观点卡描边生长
+    { t:S1.tagL,  id:'soft_tick',  dB:-22, pri:1 },
+    { t:S1.cardR, id:'swish_soft', dB:-18, pri:2 },      // 右卡
+    { t:S1.tagR,  id:'soft_tick',  dB:-22, pri:1 },
+    { t:S1.note,  id:'soft_tick',  dB:-21, pri:1 },      // 底部提问
+    { t:S1.sel0,  id:'pulse_tap',  dB:-16, pri:1 },      // 思考小球出发
+    /* v3.5：两次往返的落点音 —— 到左/到右是轻「叮」（pulse_tap），回中是低「嗡」（sub_rise）。
+       间隔 0.70s ≥ pulse_tap 0.30 / sub_rise 1.00 的下限；一个重音都没占（全片仍锁 3 处）。 */
+    { t:3.20, id:'pulse_tap', dB:-17, pri:1 },           // 第一次到左
+    { t:3.90, id:'pulse_tap', dB:-17, pri:1 },           // 第一次到右
+    { t:4.60, id:'sub_rise',  dB:-22, pri:1 },           // 回到中心
+    { t:5.30, id:'pulse_tap', dB:-17, pri:1 },           // 第二次到左
+    { t:6.00, id:'pulse_tap', dB:-17, pri:1 },           // 第二次到右
+    { t:6.70, id:'sub_rise',  dB:-22, pri:1 },           // 回到中心（摆球结束）
+    { t:8.50, id:'soft_tick', dB:-22, pri:1 },           // 停住落点（选择窗口收口）
+    /* 心理桥段入场：用 sub_rise 而不是 low_impact —— 全片重音配额锁死 3 处
+       （47.4「一半」/ 67.5「确认偏误」/ 129.2 金句），bridge 只能用一个普通事件 */
+    { t:S1.bridge, id:'sub_rise',  dB:-18, pri:1 },
+    { t:S1.cardsOut, id:'swish_soft', dB:-19, pri:2 },   // 立场卡片整体退场
+    { t:S2.search, id:'sub_rise',  dB:-20, pri:1 },      // S2 搜索环：大脑开始搜寻
+    { t:S2.title, id:'soft_tick',  dB:-21, pri:1 },
+    { t:S2.dot0,  id:'pulse_tap',  dB:-16, pri:1 },      // 证据 Group 开始弹出
+    { t:S2.note,  id:'soft_tick',  dB:-21, pri:1 },      // 挑你认为有说服力的
+    { t:S2.scan0, id:'swish_soft', dB:-17, pri:2 },      // 焦点框开始扫描
+    { t:S3.sieve, id:'swish_soft', dB:-18, pri:2 },      // 筛网落下
+    { t:S3.sel0,  id:'pulse_tap',  dB:-16, pri:1 },      // 一组亮起
+    { t:S3.dim0,  id:'pulse_tap',  dB:-16, pri:1 },      // 另一组变暗
+    { t:S3.dim1,  id:'soft_tick',  dB:-21, pri:1 },
+    { t:S3.tagL,  id:'soft_tick',  dB:-22, pri:1 },
+    { t:S3.tagR,  id:'soft_tick',  dB:-22, pri:1 },
+    { t:S3.half,  id:'low_impact', dB:-12, pri:3 },      // ★重音①「一半」
+    { t:S3.src,   id:'soft_tick',  dB:-21, pri:1 },      // 文献线索（S3）
+    { t:S4.matrix, id:'soft_tick', dB:-22, pri:1 },      // 分隔线起笔
+    { t:S4.frame, id:'swish_soft', dB:-18, pri:2 },      // 高亮框 / 暗蒙版
+    { t:S4.side,  id:'soft_tick',  dB:-22, pri:1 },
+    { t:S4.title, id:'low_impact', dB:-12, pri:3 },      // ★重音②「确认偏误」
+    { t:S4.sub,   id:'soft_tick',  dB:-22, pri:1 },      // 英文副题
+    { t:S5.flow,  id:'swish_soft', dB:-18, pri:2 },      // S5 流程链出现
+    { t:S5.right, id:'soft_tick',  dB:-21, pri:1 },
+    { t:S5.node0, id:'pulse_tap',  dB:-16, pri:1 },
+    { t:S5.node0 + S5.nodeStep,     id:'pulse_tap', dB:-16, pri:1 },
+    { t:S5.node0 + 2 * S5.nodeStep, id:'pulse_tap', dB:-16, pri:1 },
+    { t:S5.node0 + 3 * S5.nodeStep, id:'pulse_tap', dB:-16, pri:1 },
+    { t:S5.note,  id:'soft_tick',  dB:-22, pri:1 },
+    { t:S6.main,  id:'swish_soft', dB:-18, pri:2 },      // S6 三场景
+    { t:S6.A,     id:'pulse_tap',  dB:-16, pri:1 },
+    { t:S6.B,     id:'pulse_tap',  dB:-16, pri:1 },
+    { t:S6.C,     id:'pulse_tap',  dB:-16, pri:1 },
+    { t:S6.close, id:'soft_tick',  dB:-22, pri:1 },
+    { t:S7.brain, id:'swish_soft', dB:-18, pri:2 },      // S7 大脑出现
+    { t:S7.node[0], id:'pulse_tap', dB:-16, pri:1 },
+    { t:S7.node[1], id:'pulse_tap', dB:-16, pri:1 },
+    { t:S7.node[2], id:'pulse_tap', dB:-16, pri:1 },
+    { t:S7.node[3], id:'pulse_tap', dB:-16, pri:1 },
+    { t:S7.sum1,  id:'soft_tick',  dB:-22, pri:1 },
+    { t:S8.line,  id:'swish_soft', dB:-18, pri:2 },      // S8 粒子汇聚成线
+    { t:S8.frame, id:'soft_tick',  dB:-22, pri:1 },      // 自检框弹出
+    { t:S8.q1,    id:'low_impact', dB:-12, pri:3 },      // ★重音③ 收尾金句
+    { t:S8.ask,   id:'soft_tick',  dB:-22, pri:1 },
+    { t:S8.src,   id:'soft_tick',  dB:-22, pri:1 },
+    /* v3.3 新增：幕间转场音（全部用 audio/ 里真实存在的素材，且不新增重音；
+       17.1 与 29.0 已有 sub_rise / swish_soft，不重复挂 */
+    { t:54.00,    id:'swish_soft', dB:-19, pri:2 },      // S3→S4：命名卡落地
+    { t:71.00,    id:'swish_soft', dB:-20, pri:2 },      // S4→S5：转向机制
+    { t:86.00,    id:'sub_rise',   dB:-20, pri:1 },      // S5→S6：沉到生活场景
+    { t:108.00,   id:'soft_tick',  dB:-21, pri:1 }       // S6→S7：进入大脑
+  ];
+  /* 事件表必须按时间升序 —— 体检脚本按数组顺序算同类最小间隔，尾部追加会算出负间隔 */
+  SFX_EVENTS.sort(function(a, b){ return a.t - b.t; });
+
+  var SFX_MAX_CONCURRENT = 3;
+  /* 工具链契约：audio-render.mjs（以及第一期成片）读的是事件 { t, s, g }、
+     音色定义 { file, gain, minGap }。页面内部用 { id, dB } 更好读，
+     这里只补齐工具链字段用于导出，不改内部逻辑。 */
+  Object.keys(SFX_DEF).forEach(function(k){ SFX_DEF[k].minGap = SFX_DEF[k].min; });
+  SFX_EVENTS.forEach(function(e){ e.s = e.id; e.g = e.dB; e.why = e.why || ''; });
+  var SFX = { on: params.get('sfx') !== '0', ctx:null, buf:{}, el:{}, log:[], bgm:null,
+              bgmVol:parseFloat(params.get('bgmvol') || '-19.2') };
+  function audioEnable(){
+    if (!SFX.ctx) {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) SFX.ctx = new AC();
+    }
+    if (SFX.ctx && SFX.ctx.state === 'suspended') SFX.ctx.resume();
+    loadSfx(); loadBgm();
+  }
+  function loadSfx(){
+    Object.keys(SFX_DEF).forEach(function(k){
+      if (SFX.buf[k] || SFX.el[k]) return;
+      var f = SFX_DEF[k].file;
+      if (SFX.ctx) {
+        fetch(f).then(function(r){ return r.arrayBuffer(); })
+          .then(function(b){ return SFX.ctx.decodeAudioData(b); })
+          .then(function(ab){ SFX.buf[k] = ab; })
+          .catch(function(){ /* 缺素材静默降级，绝不 console.warn */ });
+      } else {
+        var el = new Audio(f); el.preload = 'auto'; SFX.el[k] = el;
+      }
+    });
+  }
+  function loadBgm(){
+    if (!SFX.bgm && params.get('bgm') !== '0') {
+      SFX.bgm = new Audio('audio/ambient_pad.mp3');
+      SFX.bgm.loop = true; SFX.bgm.preload = 'auto';
+      SFX.bgm.volume = Math.pow(10, SFX.bgmVol / 20);
+    }
+  }
+  var SFX_MIN_GAP = {};
+  function sfxPlay(e, clockNow){
+    var def = SFX_DEF[e.id]; if (!def) return;
+    /* plan = 该事件"应该"落在音频时钟上的时刻（与画面同源）；call = 真正调用的时刻。
+       audio-live-check.mjs 用 (call - plan) 算触发偏差：webaudio 路径按采样级调度 → 偏差 0。 */
+    var plan = clockNow + Math.max(0, e.t - curT);
+    var last = SFX_MIN_GAP[e.id];
+    if (last != null && clockNow - last < def.min) return;
+    var live = SFX.log.filter(function(x){ return x.dur != null && clockNow - x.at < x.dur; });
+    if (live.length >= SFX_MAX_CONCURRENT) {
+      var lowest = live.sort(function(a, b){ return a.pri - b.pri; })[0];
+      if (lowest && lowest.pri >= e.pri) return;
+    }
+    SFX_MIN_GAP[e.id] = clockNow;
+    var dur = 0.5;
+    if (SFX.buf[e.id]) {
+      var g = SFX.ctx.createGain();
+      g.gain.value = Math.pow(10, e.dB / 20);
+      var src = SFX.ctx.createBufferSource();
+      src.buffer = SFX.buf[e.id]; src.connect(g); g.connect(SFX.ctx.destination);
+      src.start(plan);
+      dur = SFX.buf[e.id].duration;
+    } else if (SFX.el[e.id]) {
+      var el2 = SFX.el[e.id];
+      el2.currentTime = 0; el2.volume = Math.pow(10, e.dB / 20);
+      el2.play().catch(function(){});
+      dur = el2.duration || 0.5;
+    }
+    /* 日志同时带工具链字段（s / g）与页面内部字段（id / dB）：audio-live-check.mjs 读前者 */
+    SFX.log.push({ t:e.t, s:(e.s || e.id), g:(e.g == null ? e.dB : e.g),
+                   id:e.id, dB:e.dB, pri:e.pri, at:clockNow, dur:dur,
+                   plan:+plan.toFixed(3), call:+clockNow.toFixed(3) });
+  }
+  function sfxTick(prevT, curT, live, clockNow){
+    for (var i = 0; i < SFX_EVENTS.length; i++) {
+      var e = SFX_EVENTS[i];
+      if (e._done) continue;
+      if (e.t <= curT) { e._done = true; if (live && e.t > prevT && e.t <= curT) sfxPlay(e, clockNow); }
+    }
+  }
+  function bgmSync(){
+    loadBgm();
+    if (SFX.bgm && SFX.bgm.paused) SFX.bgm.play().catch(function(){});
+  }
+
+  /* ============================================================
+     11 · 主渲染 + 时间循环
+     ============================================================ */
+  function render(t){
+    var L = lightAt(t), si = screenAt(t), sc = SCREENS[si];
+    if (PLATE.on) { drawBg(t, L, PLATE.dim, PLATE.boxes); drawGrain(t); return; }
+    drawBg(t, L); drawGrain(t);
+    updateAIPlate(t, sc);
+    updateItems(t, L);
+    updateOpinionCards(t); updateSelector(t); updateSearch(t); updateField(t); updateSieve(t); updateHalfRing(t);
+    updateStage4(t); updateFlow(t); updateScenes(t); updateBrain(t); updateEnd(t);
+    updateLeaders(t);
+    for (var i = 0; i < pieceEls.length; i++) renderPiece(pieceEls[i], t, L);
+    /* 幕内字幕/角标提前 0.3s 起亮：换幕时新旧两屏的字幕交叉淡化，
+       不会在切点出现"两屏都还没亮"的空帧（S1→S2 这一刀正好卡在 17.0s） */
+    var inFade = fadeIn(t, sc.t0 - 0.30, 0.60), outFade = fadeOut(t, sc.t1, OUT_LEAD);
+    kickerEl.style.opacity = (0.9 * inFade * outFade).toFixed(3);
+    captionEl.style.opacity = (0.9 * inFade * outFade).toFixed(3);
+    capNote.textContent = sc.note;
+    kickNote.textContent = sc.id.toUpperCase();
+    capIdx.textContent = ('0' + (si + 1)).slice(-2) + ' / 0' + SCREENS.length;
+    progressBar.style.width = (clamp01(t / TOTAL) * 100).toFixed(2) + '%';
+    if (params.get('debug') === '1') {
+      debugEl.textContent = 't=' + t.toFixed(2) + 's  screen=' + (si + 1) + '  light=(' +
+        Math.round(L.x) + ',' + Math.round(L.y) + ')';
+    }
+  }
+  function fit(){
+    var s = Math.min(window.innerWidth / W, window.innerHeight / H);
+    stageEl.style.transform = 'translate(-50%,-50%) scale(' + s + ')';
+  }
+  window.addEventListener('resize', fit);
+
+  var rate = parseFloat(params.get('rate') || '1') || 1;
+  var staticFrame = !!params.get('t') || params.get('autoplay') === '0';
+  var startAt = 0, curT = 0, playing = !staticFrame, t0ms = null;
+
+  /* ---- 量测钩子：所有体检脚本都从这里取数 ---- */
+  window.__seek = function(sec){ playing = false; staticFrame = true;
+    curT = Math.max(0, Math.min(TOTAL, sec)); render(curT); };
+  window.__state = function(){ return { t:curT, playing:playing, total:TOTAL, w:W, h:H }; };
+  window.__canvas = function(){ return { w:W, h:H, aspect:+(W / H).toFixed(4), safe:SAFE,
+    safeRatio:{ left:.05, right:.95, top:.05, bottom:.05 },
+    scale:{ kH:kH(), rFont160:rFont(160), rSize64:rSize(64) } }; };
+  window.__light = function(){ var L = lightAt(curT);
+    return { t:+curT.toFixed(3), x:+L.x.toFixed(2), y:+L.y.toFixed(2), r:LIGHT_R }; };
+  window.__lightKeys = function(){ return LIGHT_KEYS; };
+  window.__screens = function(){ return SCREENS; };
+  window.__pieces = function(){ return PIECES; };
+  window.__items = function(){ var out = {}, k;
+    for (k in ITEMS) if (Object.prototype.hasOwnProperty.call(ITEMS, k)) {
+      var it = ITEMS[k];
+      out[k] = { cx:it.cx, cy:it.cy, ev:it.ev, dx:it.dx, dy:it.dy, k:+it.k.toFixed(4),
+                 out:(ITEM_SPEC[k] || {}).out, light:+it.light.toFixed(4), on:+it.on.toFixed(4) };
+    }
+    out.t = +curT.toFixed(3); return out; };
+  window.__screenItems = function(i){ var out = [], k, ev;
+    for (k in ITEMS) if (Object.prototype.hasOwnProperty.call(ITEMS, k)) {
+      ev = (ITEM_SPEC[k] || {}).ev;
+      if (ev != null && ev >= SCREENS[i].t0 && ev < SCREENS[i].t1) out.push(k);
+    }
+    return out; };
+  window.__structStarts = function(i){
+    var per = [ [S1.cardL, S1.cardR, S1.sel0],
+    [S2.search, S2.scan0],
+                [S3.sieve, S3.sel0, S3.dim0, S3.sort0, S3.half],
+                [S4.matrix, S4.frame, S4.title],
+                [S5.flow, S5.node0],
+                [S6.main, S6.A, S6.B, S6.C],
+                [S7.brain, S7.node[0], S7.node[1], S7.node[2], S7.node[3]],
+                [S8.line, S8.frame, S8.q1] ];
+    return i == null ? [].concat.apply([], per) : (per[i] || []);
+  };
+  window.__narrative = function(){
+    return { t:+curT.toFixed(3),
+      field:{ on:+ITEMS.field.on.toFixed(3), split:FIELD_STATE.split, select:FIELD_STATE.select,
+              ignore:FIELD_STATE.ignore, focus:FIELD_STATE.focus,
+              syms:EV_ELS.map(function(c){ return +(parseFloat(c.g.style.opacity) || 0).toFixed(3); }) },
+      opinion:{ left:+(parseFloat(cardL.g.style.opacity) || 0).toFixed(3),
+                right:+(parseFloat(cardR.g.style.opacity) || 0).toFixed(3),
+                selectorDx:ITEMS.selector.dx },
+      sieve:{ on:+ITEMS.sieve.on.toFixed(3), dy:ITEMS.sieve.dy },
+      s4:{ divider:+(parseFloat(divider.style.opacity) || 0).toFixed(3),
+           frame:+(parseFloat(frameL.style.opacity) || 0).toFixed(3),
+           mask:+(parseFloat(maskR.style.opacity) || 0).toFixed(3) },
+      flow:{ rails:flowRail.map(function(l){ return +(parseFloat(l.style.opacity) || 0).toFixed(3); }),
+             nodes:flowNodes.map(function(f){ return +(parseFloat(f.ring.style.opacity) || 0).toFixed(3); }) },
+      scenes:SCEN_ELS.map(function(s){ return +(parseFloat(s.main.style.opacity) || 0).toFixed(3); }),
+      scatter:SCATTER2.map(function(s){ return +(parseFloat(s.g.style.opacity) || 0).toFixed(3); }),
+      brain:{ icon:+(parseFloat(brainIcon.style.opacity) || 0).toFixed(3),
+              nodes:bNodes.map(function(c){ return +(parseFloat(c.style.opacity) || 0).toFixed(3); }),
+              syms:BSYM.map(function(b){ return +(parseFloat(b.g.style.opacity) || 0).toFixed(3); }) },
+      end:{ qline:+(parseFloat(qlineEl.style.opacity) || 0).toFixed(3),
+            frame:+(parseFloat(selfFrame.style.opacity) || 0).toFixed(3),
+            syms:ESYM.map(function(e){ return +(parseFloat(e.g.style.opacity) || 0).toFixed(3); }) },
+      half:ITEMS.half };
+  };
+  /* 本片没有球簇：通用脚本读这个钩子时返回空表（不要伪造数值） */
+  window.__clusterRadii = function(){ return {}; };
+  /* 本片自己的比例自证：8 个证据符号的支持/反对各多少、分流最大位移与最大速度（<12px/s） */
+  window.__field = function(){
+    var sup = EV_ITEMS.filter(function(d){ return d.stance === 'S'; }).length;
+    return { total:EV_ITEMS.length, support:sup, oppose:EV_ITEMS.length - sup,
+             maxTravel:S3.maxTravel, maxSpeed:S3.maxSpeed,
+             speedRule:'分流速度上限 11px/s（硬红线 <12px/s）',
+             slots:EV_ITEMS.map(function(d){ return d.kind + ':' + Math.round(d.p[0]*100) + '→' + Math.round(d.t[0]*100); }),
+             phase:{ split:FIELD_STATE.split, select:FIELD_STATE.select, ignore:FIELD_STATE.ignore },
+             field:{ cx:ITEMS.field.cx, cy:ITEMS.field.cy, on:+ITEMS.field.on.toFixed(4) } };
+  };
+  /* 元素产生动画自证：①观点卡描边 ②符号弹出 ③筛网落位 ④分流进度 ⑤「一半」光圈 */
+  window.__produce = function(){
+    function grew(o){ var g = +o.box.getAttribute('stroke-dashoffset') || 0; return +(1 - g / o.len).toFixed(3); }
+    return {
+      t: +curT.toFixed(2),
+      opinion:{ left:grew(cardL), right:grew(cardR), selectorDx:ITEMS.selector.dx },
+      symbols: EV_ELS.map(function(c){ return { kind:c.d.kind, stance:c.d.stance,
+        op:+(parseFloat(c.g.style.opacity) || 0).toFixed(3), travel:+c.d.travel.toFixed(1),
+        cx:c.d.cx, cy:c.d.cy }; }),
+      sieveDy: ITEMS.sieve.dy,
+      fieldPhase: FIELD_STATE,
+      flow: flowNodes.map(function(f){ return +(parseFloat(f.ring.style.opacity) || 0).toFixed(3); }),
+      brain: bNodes.map(function(c){ return +(parseFloat(c.style.opacity) || 0).toFixed(3); }),
+      halfRing: { r:HALF_RING.rNow, op:HALF_RING.opNow, t0:HALF_RING.t0, dur:HALF_RING.dur },
+      quota: { breathe:['S1 观点卡呼吸', 'S3「一半」金属字', 'S8 收尾金句'],
+               pop:['S3「一半」0.60→1.00', 'S2 证据符号 0.40→1.00（8 个）'],
+               note:'「一半」是重音弹入；证据符号的弹出属元素出场，不占重音配额' }
+    };
+  };
+
+  window.__audioEvents = function(){ return { events:SFX_EVENTS, defs:SFX_DEF,
+    maxConcurrent:SFX_MAX_CONCURRENT, sfxOn:SFX.on, bgm:SFX.bgm ? SFX.bgm.src : null, bgmVol:SFX.bgmVol }; };
+  window.__audioLog = function(){ return SFX.log.slice(); };
+  window.__audioStatus = function(){ var ready = [];
+    Object.keys(SFX_DEF).forEach(function(k){
+      ready.push(k + ':' + (SFX.buf[k] ? 'buffer' : (SFX.el[k] ? 'element' : 'missing'))); });
+    return { on:SFX.on, ctx:SFX.ctx ? SFX.ctx.state : 'none', sounds:ready, played:SFX.log.length }; };
+  window.__audioEnable = function(){ audioEnable(); return window.__audioStatus(); };
+  /* 封面抽板入口：__plate(0.35, [[x0,y0,x1,y1],…]) —— 归一化坐标，压粒子 + 核心区不画粒子 */
+  window.__plate = function(dim, boxes){
+    PLATE.on = true; PLATE.dim = (dim == null ? 0.35 : dim); PLATE.boxes = boxes || null;
+    /* 早退只停了"这一帧的绘制"，上一帧画在 DOM 上的母题与文字还留着 —— 必须显式藏掉，
+       否则抽出来的背景板会把成片的文字和飞机一起截进去（实测踩过） */
+    textsRoot.style.display = 'none';
+    itemsSvg.style.display = 'none';
+    kickerEl.style.display = 'none';
+    captionEl.style.display = 'none';
+    document.getElementById('progress').style.display = 'none';
+    render(curT);
+    return { on:PLATE.on, dim:PLATE.dim, boxes:PLATE.boxes, t:curT };
+  };
+
+  var lastFrameT = -1;
+  function loop(now){
+    var prevT = lastFrameT;
+    if (playing) {
+      if (t0ms === null) t0ms = now - curT * 1000 / rate;
+      curT = (now - t0ms) / 1000 * rate;
+      if (curT >= TOTAL) { curT = TOTAL; playing = false; }
+    }
+    var clockNow = SFX.ctx ? SFX.ctx.currentTime : now / 1000;
+    render(curT);
+    var live = playing && !staticFrame;
+    sfxTick(prevT, curT, live, clockNow);
+    if (live) bgmSync();
+    lastFrameT = curT;
+    requestAnimationFrame(loop);
+  }
+  window.addEventListener('keydown', function(e){
+    if (e.code === 'Space') { e.preventDefault();
+      if (playing) playing = false; else { playing = true; t0ms = null; audioEnable(); } }
+    else if (e.key === 'r' || e.key === 'R') { curT = startAt; t0ms = null; playing = true; staticFrame = false; }
+  });
+  window.addEventListener('pointerdown', function(){ if (SFX.on) audioEnable(); }, { once:true });
+  if (params.get('sfx') === '1') audioEnable();
+
+  if (staticFrame) {
+    curT = Math.max(0, Math.min(TOTAL, parseFloat(params.get('t')) || 0));
+    playing = false; render(curT);
+  }
+  fit();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
