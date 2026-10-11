@@ -129,7 +129,7 @@
 
 ---
 
-## A1–A37 最终验收（成片体检）
+## A1–A43 最终验收（成片体检）
 
 | # | 指标 | 通过线 |
 | --- | --- | --- |
@@ -170,6 +170,12 @@
 | A35 | **交付包** | 成片（带音轨）+ 封面（1920×1080 + 缩略测试图）+ 发布文案 + 交付说明；**封面背景板从最终成片重抽** |
 | A36 | **跨元素位置** | 任何 update 函数要拿别的元素当前帧的位置/亮度，必须自己算（纯函数）或确认排在它之后；配套对照探针：同一时刻两个对称对象的亮度/描边**必须不同**（左卡 0.999/4.59px vs 右卡 0.78/3.00px） |
 | A37 | **引线不戳字** | `box-probe.mjs` 逐时刻线段-矩形相交（盒内缩 2px 判）：端点进字盒 = 0 处；同时列出文字盒距边距离与图形件越界 |
+| A38 | **跨幕物品归属** | 每屏的"主角物品"按**在场窗口重叠**取（`ev < t1 && out > t0`）；跨幕复用的母题在后续幕里仍须被认到（第四期 S3–S5 同一片点阵踩过，README §22.1-1） |
+| A39 | **音效并发与长素材** | ≥900ms 的素材**独占一拍**；实测并发 ≤ 上限（本期长素材连锁压出 4 个，上限 2，§22.1-2） |
+| A40 | **浮动文字的间隙** | 紧邻两片文字的**静态间隙 ≥12px**（非附着片自带 ±6px 浮动）；`clash-check.mjs` 0 处叠压 |
+| A41 | **底部注释行** | 非附着注释停在 **y ≤ 0.87H**，含浮动后不越安全框（`textbox-check.mjs` 越界 0） |
+| A42 | **A31 的远锚点** | 同一片图形上挂多条正文的幕，`LIGHT_ANCHORS` 必须有能让光离开该片的**远锚点**（§22.1-6） |
+| A43 | **比例/数量自证** | 画面里任何"比例、数量、速度"结论都要有一条能复算的探针（`probe.mjs --field`） |
 | §6 | 音效 | 事件条数 / 重音 3 处 / 并发 ≤2 / 混合峰值 −11.4dBFS / 噪检阈值通过 |
 | §10 | 封面 | 8 条《最终校验项》全过 |
 | §18 | 反模式 | `node tools/anti-slop.mjs --html <成片.html>` 的「要看一眼」为 0（故意签名与转自有检查项不判失败） |
@@ -195,6 +201,35 @@
 
 ---
 
+## 阶段 10 · 可选支线：Remotion 直出（README §23）
+
+> 只在**用户点名要 Remotion**、或需要 React 生态 / 组件复用 / 分幕预览时走这条线。
+> 代价：**没有 DOM 体检**（A1/A19/A24/A29/A31/A32 在 Remotion 里没有机器判据，只能靠静帧 + 字符图人工审）。
+
+**工程**
+
+- [ ] 先核 API 再写码：对着 `node_modules/remotion/dist/**/*.d.ts` 确认（`Easing.spring` / `output:'perceptual-scale'` / `Interactive.*` 都在；**shader 转场需要 `<HtmlInCanvas>`，只能用来 fade/slide/wipe/flip/iris/clockWipe/pushCut/none**）
+- [ ] 脚手架：`create-video` 走 GitHub 克隆 —— **连不上 github.com 就手写** package.json / tsconfig（开 `resolveJsonModule`）/ remotion.config.ts / `src/index.ts` / `src/Root.tsx`；依赖走 npm registry
+- [ ] 画面零 `Math.random()`；动画值内联在 `style`（`interpolate()` 直接写在属性上，用 `scale/translate/rotate`）
+- [ ] 改完源码结果"一模一样"时 → `--bundle-cache=false` 重渲
+
+**声音与字幕**
+
+- [ ] 音量收敛成**五档常量表**；事件时刻用帧号写死
+- [ ] 平衡对着**同系列已交付成片**量（垫音段 / 重音段的 peak·RMS），目标：事件高于垫音 ≥6dB
+- [ ] 真峰撞顶用 `alimiter` 收（`limit=0.891` ≈ −1dBFS），不要整体压低
+- [ ] 音频单独渲：`npx remotion render <id> out/a.wav --codec=wav` → 再 `-c:v copy` 合成（**视频流 md5 不变**）
+- [ ] 字幕读速：中位 5–8 字/秒、>8 字/秒的句子逐条复核；字幕层放在 `TransitionSeries` **之外**；字幕带停在底部 132px 之上
+
+**出片与自查**
+
+- [ ] 出片后过 `-pix_fmt yuv420p -color_range tv`（Remotion 默认 `yuvj420p` full range）
+- [ ] `node scripts/review.mjs`（字幕读速 / 空隙 / 声音密度 / 重音间距）四项都过目
+- [ ] `node scripts/stills.mjs <帧…>` 批量静帧 + `imgscan.mjs` 打字符图逐幕审版面（首帧必须有主体）
+- [ ] 封面用**同一工程的另一个 composition** 出（零外来素材）+ 540×304 缩略实测决定主投款
+
+---
+
 ## 复现命令（`cd templates/tools`，脚本默认按同目录的 `cdp.mjs` 找浏览器）
 
 ```powershell
@@ -213,6 +248,8 @@ node copy-table.mjs            <html> --md <输出.md>    # 导出成片文案�
 node film-stills.mjs           <html> <输出目录>         # 每屏静帧
 node textbox-check.mjs         <html>                  # A32 文字盒：横向溢出 / 换行 / 越界
 node ink-bands.mjs <图.png> "x0,y0,x1,y1" 5            # 缺字自证：逐字带墨量（金属字丢填充）
+node probe.mjs <html> --field                        # A43 比例自证：词位比 / 漂移速度等
+node probe.mjs <html> --keys 14,26                   # 光源关键帧；--light 列路点 / --pieces 列逐片文字盒
 
 # 渲染完成后（量成片，不是量页面）
 node readability-check.mjs     <html> <帧目录> --stride 4 --md <可读性.md>   # A33 最差分帧对比度
