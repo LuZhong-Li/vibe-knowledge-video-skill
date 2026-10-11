@@ -209,7 +209,7 @@
 **工程**
 
 - [ ] 先核 API 再写码：对着 `node_modules/remotion/dist/**/*.d.ts` 确认（`Easing.spring` / `output:'perceptual-scale'` / `Interactive.*` 都在；**shader 转场需要 `<HtmlInCanvas>`，只能用来 fade/slide/wipe/flip/iris/clockWipe/pushCut/none**）
-- [ ] 脚手架：`create-video` 走 GitHub 克隆 —— **连不上 github.com 就手写** package.json / tsconfig（开 `resolveJsonModule`）/ remotion.config.ts / `src/index.ts` / `src/Root.tsx`；依赖走 npm registry
+- [ ] 脚手架：`create-video` 卡在克隆模板（网络抖动或模板仓库路径变更）时**直接手写** package.json / tsconfig（开 `resolveJsonModule`）/ remotion.config.ts / `src/index.ts` / `src/Root.tsx`；依赖走 npm registry（见 README §23.2）
 - [ ] 画面零 `Math.random()`；动画值内联在 `style`（`interpolate()` 直接写在属性上，用 `scale/translate/rotate`）
 - [ ] 改完源码结果"一模一样"时 → `--bundle-cache=false` 重渲
 

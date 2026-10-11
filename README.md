@@ -1313,14 +1313,20 @@ Apache-2.0 / MIT 可以取用（保留声明）；**`remotion` 是 Remotion Lice
 | ⚠️ **shader 转场只有 HtmlInCanvas 能用** | `crossZoom / dreamyZoom / linearBlur / filmBurn / dissolve / swap / ripple / crosswarp / zoomBlur / zoomInOut / bookFlip` 的 d.ts 里都带 `*Shader`/`draw` —— 直接塞进 `TransitionSeries.Transition` 会失败或需要包一层 `<HtmlInCanvas>` |
 | ✅ 能直接用的 DOM 转场 | `fade / slide / wipe / flip / iris / clockWipe(要 width,height) / pushCut(自带闪光参数) / none` |
 
-### 23.2 脚手架：`create-video` 走的是 GitHub 克隆
+### 23.2 脚手架：`create-video` 卡在"克隆模板"这一步 —— 手写更稳
 
 - `npx create-video@latest --yes --blank --no-tailwind x` 会 clone `github.com/remotion-dev/template-blank`。
-  本机**连不上 github.com**（`Failed to connect to github.com:443 after 21108 ms`）→ 直接失败。
-  **改手写脚手架**：`package.json` + `tsconfig.json`（要开 `resolveJsonModule`，字幕走 JSON）+
-  `remotion.config.ts` + `src/index.ts`(registerRoot) + `src/Root.tsx`。
-- npm registry 是通的（`npm ping` / `npm view remotion version`）→ 依赖正常装：`remotion` + `@remotion/cli`
-  + `react/react-dom` 19 + `@remotion/transitions` + `@remotion/captions`。版本用 `npx remotion add <pkg>` 对齐。
+  第一次尝试直接失败：`read ECONNRESET` → 重试报 `Failed to connect to github.com:443 after 21108 ms`。
+- **但别把"GitHub 不通"当结论**：随后单测 `git ls-remote https://github.com/remotion-dev/template-blank HEAD`
+  得到的是 **`Repository not found`** —— 说明 **GitHub 是可达的**（它回了一个 HTTP 层的答复），
+  不稳的是**"模板仓库"这一环**（网络抖动 + 模板路径本身会改）。当天 `git push` 也是通的。
+- **结论：不要把脚手架赌在别人的模板仓库上。** 手写这五个文件更稳、也更快（约 1 分钟）：
+  `package.json`（`name` 用 ASCII slug，目录名可以是中文）+ `tsconfig.json`（**必须开 `resolveJsonModule`**，
+  字幕走 JSON）+ `remotion.config.ts`（`Config.setOverwriteOutput(true)`）+ `src/index.ts`（`registerRoot`）
+  + `src/Root.tsx`（主 composition + 每幕一个 composition）。
+- npm registry 稳定（`npm ping` 6s 回 / `npm view remotion version` 正常）→ 依赖正常装：`remotion` +
+  `@remotion/cli` + `react/react-dom` 19 + `@remotion/transitions` + `@remotion/captions`。
+  版本用 `npx remotion add <pkg>` 对齐（本期全部 4.0.534）。
 
 ### 23.3 四条工程纪律
 
