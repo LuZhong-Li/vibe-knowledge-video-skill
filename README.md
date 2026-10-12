@@ -1523,3 +1523,102 @@ Remotion 路线没有 DOM 体检（§23.8），本期用**像素级替代**：�
 实现层的差别写在 04 §6 的对照表里（形变 vs 纯 dashoffset、7 个转场 vs 幕间自然演进、
 `captions.json` vs DOM 文字片、像素体检 vs A1–A43）。
 **这条经验值得记**：同题多投时，**把"叙事"和"实现"分开复用**，返工量能压到只改实现层。
+
+---
+
+## 26 Remotion 官方效果体系：@remotion/effects 与 rough-notation 的实测（2026-10-12）
+
+> 第五期 Remotion 片的第二版。第一版只用了 `@remotion/transitions`；第二版按官方效果体系重做背景与标注层，
+> 结果**画质与性能同时改善**：全片渲染 **47 分钟 → 12.3 分钟（3.8×）**，片尾过渡帧的 YAVG 从 179.5 降到 64.4。
+> 本节是这一轮的实测记录，接 §23 / §25。
+
+### 26.1 `<Solid>` 默认是**透明**的 —— noise / scanlines 会静默不出图
+
+`@remotion/effects` 的效果挂在 canvas 类组件上（`<Solid>` / `<CanvasImage>` / `<HtmlInCanvas>` / `<Video>`）。
+第一次探针里：
+
+```tsx
+<Solid width={w} height={h} effects={[noise({amount: 0.35, seed: 7})]} style={{...}} />
+```
+
+量出来 noise 块与**背景同亮度**（mean 6 / max 6），也就是**什么都没画**。
+原因：`noise` / `scanlines` 是"与源相乘"的效果，而 `<Solid>` 的 `color` 默认是 `transparent`
+（alpha 0）→ 乘完还是透明。而 `starburst` / `lightLeak` 是"加光"，即使源透明也看得见 ——
+**所以只试后两个会得出"效果能用了"的错误结论**。
+
+修法：`<Solid color="#8A8A9A" effects={[noise({amount: 0.85, seed})]} style={{opacity: 0.055, mixBlendMode: "overlay"}} />`
+（给底色、用 `style.opacity` 控强度）。实测此后 noise 块 mean 73 / scanlines 91，都正常。
+
+### 26.2 渲染前必须开 ANGLE
+
+```ts
+import {Config} from '@remotion/cli/config';
+Config.setChromiumOpenGlRenderer("angle");
+```
+
+不开的话无头 Chromium 拿不到 WebGL2 上下文，效果静默不出图（和 26.1 一样是"没有报错但没效果"）。
+`setChromiumOpenGlRenderer` 的合法取值（对着装好的版本核过）：`swangle | angle | egl | swiftshader | vulkan | angle-egl`。
+
+### 26.3 `Overlay` 不压缩时间轴，`Transition` 压缩 —— 这个差别决定你怎么加"剪接点效果"
+
+`<TransitionSeries.Transition>` 会让两幕**同时播放**（总时长变短），
+`<TransitionSeries.Overlay>` 只是盖在切点上（总时长不变），而且**Overlay 不能与 Transition 相邻**。
+
+所以当片子的**字幕与音效都挂在绝对帧上**（无旁白片子几乎都是这样），
+最容易踩的坑是：为了加一个光漏把 Transition 换成 Overlay → 总时长变长 → 所有字幕与音效整体错位。
+
+**本期的做法**：把"剪接点效果"做成**一个跟随切点的全局层** —— 自己算每个切点的窗口与 `progress`，
+窗口内挂载、窗口外返回 `null`，放在 `<TransitionSeries>` 之后、字幕层之前。
+时间轴一帧不动，7 个切点各有一道光漏，而且天然实现"只在该切点挂载"（见 26.5）。
+
+### 26.4 三条"先量后定"的强度边界（照这个量级起手）
+
+| 效果 | 一开始写的值 | 实测后果 | 收敛到的值 |
+| --- | --- | --- | --- |
+| `lightLeak` | `span 26 帧 / opacity 0.85` | 剪接点帧 YAVG **85–115**、亮墨 52–97%（内容糊掉） | `span 14 / opacity 0.12` → YAVG 43–54、亮墨 0.6–7.4% |
+| `starburst` | 全屏铺开 / `peakOpacity 0.4` | 重音帧 YAVG 75.8 / 93.4、亮墨 60% / 78%（金属标题被吃掉） | 限制在 700×700 圆盘 / `peakOpacity 0.18` → YAVG 49–59、标题峰值仍 0.92 |
+| `dissolve()` | `lineWidth 2.2 / intensity 1.4` | 过渡帧 YAVG **179.5**（近全白），**而且偏红** | `lineWidth 0.34 + spreadColor #6B4A1A + hotColor #FFD766 + pow 6` → 峰值 64.4 |
+
+**`dissolve()` 的默认值是红色的**：`spreadColor` 默认 `#ff0000`、`hotColor` 默认 `#e6e633`、`lineWidth` 默认 **0.1**。
+传 `lineWidth: 2.2` 等于把默认带宽放大 22 倍 —— 出来的是"红色白屏扫过"，与暖金体系直接冲突。
+**凡是用转场/效果的默认色，先去看 `dist/presentations/*.js` 里的 DEFAULT_ 常量。**
+
+### 26.5 整片长跑崩在 React 提交阶段 = WebGL 上下文被回收
+
+现象：全片渲染跑到约 8 分钟（数千帧之后）崩在一次 React commit 里；但把同一批帧**分两段单独渲**都干净通过
+（0–400 与 3500–4945 各自 exit 0）→ 说明不是某一帧的问题，而是**累积性问题**。
+
+根因：我把 7 个光漏 `<Solid>` 一直挂在树上（用 `disabled` 关掉），加上背景 3 层，
+页内常驻 **~11 个 WebGL 画布**；长跑几千帧后上下文被回收/丢失。
+
+修法：**窗口内才挂载**（窗口外 `return null`）→ 常驻上下文降到 ~4 个，全片一次跑通、日志 0 报错。
+**规则：WebGL 层能少挂就少挂；"关掉但留着"和"不挂载"在前端是两件不同的事。**
+
+### 26.6 性能：DOM 粒子/噪点系统是唯一的真瓶颈（47 → 12.3 分钟）
+
+| 版本 | 背景层实现 | 4946 帧 / `--concurrency=4` |
+| --- | --- | --- |
+| 第一版 | 尘埃 84 个 + 颗粒约 900 个**绝对定位 div**，逐帧改 `left/top` | **47 分钟**（≈1.75 帧/秒） |
+| 第二版 | `noise` + `paper` 两层 GPU 画布 + 尘埃仍是 84 个 div | **12.3 分钟**（≈6.7 帧/秒） |
+
+同一批帧、同一并发度，**3.8 倍**。而且第二版的 JPEG 单帧更大（~108KB vs ~86KB，因为纹理更细），
+也就是说 GPU 版是"画得更多还更快"。
+**结论：粒子、噪点、颗粒、扫描线一律走 GPU/canvas；DOM 只留给"需要布局关系"的东西（卡片、文字、图形件）。**
+`paper()` 是静态纹理（参数不变时按 key 复用），比逐帧动画的层便宜得多，可以放心铺满全片当底纹。
+
+### 26.7 `@remotion/rough-notation`：给"台账 / 批注"类片子的一条新语言
+
+`Highlight / Underline / Circle / Box / Bracket / StrikeThrough / CrossedOff`，`progress` 由帧驱动。
+它把"墨迹"从**叙事动作**（写、描、回流）扩展到**批注动作**（圈重点、划掉、框起来）——
+对"记录 / 留痕 / 复盘"这类题材是天然契合的一层。
+
+**API 要核**（对着装好的版本核过）：`padding` 是**对象**（`{left,right,top,bottom}`，且各组件接受的键不同：
+`StrikeThrough` / `CrossedOff` **没有** padding，`Underline` 只接受 `{top}`）；`strokeWidth` / `iterations` /
+`roughness` / `bowing` 在 `SharedRoughAnnotationOptions` 里；组件要包**行内内容**（包整块 div 会画出外框）。
+
+### 26.8 留一个探针 composition（换机器/升级后先跑它）
+
+本期工程里留了 `FxProbe`：一次 still 同时验证 `noise / scanlines / starburst / lightLeak` 与
+手绘 `Circle / StrikeThrough` 是否出图 —— 用"四个矩形的墨量"判定（空白区作对照）。
+**换机器、升级 Remotion、或换渲染方案之后，先跑这个探针再排期全片渲染**：
+WebGL 类的问题全部是"不报错但没效果"，只有量像素才能发现。
