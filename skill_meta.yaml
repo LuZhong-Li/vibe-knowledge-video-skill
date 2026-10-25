@@ -1,0 +1,21 @@
+id: vibe-knowledge-video-skill
+name: vibe-knowledge-video-skill
+description: 通用视频制作 skill，以「HTML 动画」为核心引擎，覆盖多题材、多形态的视频（无旁白/带旁白、16:9 横屏/9:16 竖屏、15s–180s+），并提供 Remotion 工程化、剪辑与后期、AI 生视频辅助三条并行路线；内置逐帧渲染、机器体检（几何/时序/可读性/音效/噪检）、封面与发布规范。当用户要做科普/知识/原理/数据/产品/流程类动画视频、复刻 Vibe 知识大赏、把一篇文案做成动画短片、做带旁白的解说视频、竖屏短视频、Remotion 工程化视频、实拍/录屏/口播素材的剪辑后期、或需要这套分镜/音效/封面/外部评审/验收工作流时使用。
+metadata:
+  short-description: 通用视频制作：HTML 动画为主，Remotion/剪辑/AI 生视频三并行线
+license: MIT
+author: LuZhong-Li
+status: enabled
+path: ./skills/vibe-knowledge-video-skill
+source:
+  type: local
+  location: D:\树根\vibe-knowledge-video-skill
+targets:
+  - target: doubao
+    scope: global
+    path: .doubao/skills/vibe-knowledge-video-skill
+    mode: copy
+    enabled: true
+dependencies:
+  runtime:
+    node: ">=18"

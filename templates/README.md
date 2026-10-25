@@ -9,10 +9,13 @@
 
 ```text
 templates/
-├─ shot-template.html       单文件起步模板：3 屏 / 20s / 16:9 / 无旁白，引擎已搭好
-├─ preview/                 模板自检时出的三屏静帧（成片-S1..S3.jpg）
-├─ audio/                   占位音效（5 个短触发 + 静音位 + 氛围垫音），可直接用
-└─ tools/                   渲染 / 混音 / 噪检 / 全套体检脚本（无第三方依赖，需要本机 Node + Edge/Chrome + ffmpeg）
+├─ shot-template.html          单文件起步模板：3 屏 / 20s / 16:9 / 无旁白，引擎已搭好
+├─ shot-template-vertical.html 竖屏版骨架：3 屏 / 18s / 9:16（1080×1920），同一套引擎（README §27.3）
+├─ narration-guide.md          旁白工作流正式化说明（分支 A 带旁白 / 分支 C 共用，README §27.4）
+├─ remotion/                   分支 B 起步件：review.mjs（节奏体检）/ stills.mjs（批量静帧）/ README
+├─ preview/                    模板自检时出的三屏静帧（成片-S1..S3.jpg）
+├─ audio/                      占位音效（5 个短触发 + 静音位 + 氛围垫音），可直接用
+└─ tools/                      渲染 / 混音 / 噪检 / 旁白 / 全套体检脚本（无第三方依赖，需要本机 Node + Edge/Chrome + ffmpeg）
 ```
 
 环境：Node ≥ 18（实测 24）、Windows 上会找 Edge 或 Chrome（`tools/cdp.mjs` 自动探测）、`ffmpeg`/`ffprobe` 在 PATH 里。

@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>竖屏视频 · 起步模板（3 屏 / 18s / 9:16）</title>
+<!--
+  ============================================================
+  竖屏（9:16）视频 起步模板 —— 与横屏骨架同一套引擎
+
+  这个文件是 shot-template.html 的竖屏版：3 屏 / 18s / 1080×1920 / 无旁白，
+  引擎（时间轴 + 附着层 + 音效）已经搭好，你需要改的是：
+    ① ITEM_POS + SCREENS + 各屏节拍表（S1_T/S2_T/S3_T）
+    ② PIECES（文案分片表，从原稿逐句填）
+    ③ drawStructs() 里的图形件（把球/柱换成本片的母题；竖屏推荐「上图形、下结论」的上下叠置布局）
+    ④ 音效事件表 SFX_EVENTS + audio/ 下的采样
+
+  与横屏模板的唯一差别（README §27.3）：
+    · 画布 1080×1920（9:16），安全框 0.05–0.95 → 左/右 54px，上/下 96px
+    · 字号基准 = 横屏基准的竖屏档（绝对 px：L0 160 / L1 72 / L2 50 / L3 36 / L4 26）
+    · 文本行宽 --max-w = 画布宽 × 0.43（≈460px）
+    · 底部注释停在 y ≤ 0.90H
+  其余 P0 硬约束与横屏完全相同：绝对 px / 内外层 transform / t 驱动全部状态 /
+    大字字距 / metal 禁用 text-shadow / 整数像素 / 循环动画时间常数断言。
+  体检脚本从 __canvas() 读尺寸，不用改（tools/README §4.1）。
+
+  调试：?t=8 定位　?rate=0.5 半速　?debug=1 时间码　?sfx=0 静音
+        ?cw=2160&ch=3840 出 2K 竖屏（字号随 kH 等比放大）　?bgmvol=-19.2 垫音电平
+  ============================================================
+-->
+<style>
+  :root{
+    --bg-deep:#0A0A0A; --bg-char:#141210;
+    --ink:#F5F1E8; --ink-2:rgba(245,241,232,.62); --ink-3:rgba(245,241,232,.30);
+    --gold-hi:#D7B979; --gold:#B8944A; --gold-line:#8A7655; --glow:#6B4A1A;
+    /* 下面这组由 JS 按 CANVAS 重算（此处是 1080×1920 竖屏基准值） */
+    --safe-x:54px; --safe-top:96px; --safe-bottom:96px; --max-w:460px;
+    --fs-l0:160px; --fs-l1:96px; --fs-l2:60px; --fs-l3:52px; --fs-l4:28px;
+    --fs-kicker:26px; --fs-caption:28px; --fs-idx:24px; --tag-dot:9px;
+    --serif:"Source Han Serif SC","Noto Serif SC","Songti SC","STSong","SimSun","Times New Roman",serif;
+    --kai:"KaiTi","STKaiti","Kaiti SC","Songti SC","SimSun",serif;
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ width:100%; height:100%; background:#000; overflow:hidden; cursor:none;
+             -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+  #viewport{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:#000; }
+  #stage{
+    position:absolute; left:50%; top:50%; width:1080px; height:1920px;
+    transform-origin:center center; transform:translate(-50%,-50%) scale(1);
+    overflow:hidden;
+    background:
+      radial-gradient(120% 70% at 74% 32%, #1A1510 0%, rgba(20,18,16,0) 58%),
+      linear-gradient(180deg,#0E0D0C 0%,#0A0A0A 55%,#060606 100%);
+  }
+  #bg,#grain{ position:absolute; inset:0; width:100%; height:100%; display:block; z-index:0; }
+  #grain{ mix-blend-mode:overlay; opacity:.5; z-index:1; }
+  #vignette{
+    position:absolute; inset:0; pointer-events:none; z-index:2;
+    background:
+      radial-gradient(72% 52% at 50% 44%, rgba(0,0,0,0) 40%, rgba(0,0,0,.55) 100%),
+      linear-gradient(180deg, rgba(0,0,0,.34) 0%, rgba(0,0,0,0) 20%, rgba(0,0,0,0) 76%, rgba(0,0,0,.46) 100%);
+  }
+  .layer{ position:absolute; inset:0; }
+  #structures{ z-index:3; }
+  #texts{ z-index:4; }
+  #balls{ z-index:6; }
+  #kicker{
+    position:absolute; top:var(--safe-top); left:var(--safe-x); right:var(--safe-x);
+    display:flex; justify-content:space-between; align-items:baseline; z-index:7;
+    font-family:var(--serif); font-size:var(--fs-kicker); letter-spacing:.30em;
+    color:var(--ink-3); opacity:0;
+  }
+  #caption{
+    position:absolute; left:var(--safe-x); right:var(--safe-x); bottom:var(--safe-bottom);
+    display:flex; justify-content:space-between; align-items:flex-end; z-index:7;
+    font-family:var(--serif); font-size:var(--fs-caption); letter-spacing:.10em;
+    color:var(--ink-3); opacity:0;
+  }
+  #caption .idx{ font-size:var(--fs-idx); letter-spacing:.24em; }
+  #progress{ position:absolute; left:0; right:0; bottom:0; height:3px; background:rgba(255,255,255,.05); z-index:7; }
+  #progress i{ display:block; height:100%; width:0%;
+    background:linear-gradient(90deg, rgba(184,148,74,.42), rgba(184,148,74,.10)); }
+  #debug{
+    position:absolute; right:12px; bottom:12px; z-index:9; display:none;
+    font:14px/1.5 ui-monospace,Consolas,monospace; color:rgba(245,241,232,.55);
+    background:rgba(0,0,0,.45); padding:4px 8px; border-radius:4px;
+  }
+
+  /* ---------- 文本分片 ---------- */
+  .piece{
+    position:absolute; font-family:var(--serif); color:var(--ink); opacity:0;
+    white-space:normal; max-width:var(--max-w); will-change:transform,opacity,filter;
+  }
+  .piece.nowrap{ white-space:nowrap; }
+  .piece.vert{ writing-mode:vertical-rl; text-orientation:upright; }
+  .piece.kai{ font-family:var(--kai); letter-spacing:.14em; }
+  .piece.tag{ display:flex; align-items:center; gap:16px; color:rgba(245,241,232,.78); }
+  .piece.tag i{ flex:0 0 auto; width:var(--tag-dot); height:var(--tag-dot);
+                border-radius:50%; background:rgba(215,185,121,.75); }
+  /* 内层 .sc 做缩放与入场模糊、外层 .piece 做位移：两个 transform / filter 各管一层（P0 ②） */
+  .piece .sc{ display:inline-block; transform-origin:50% 50%; }
+  .piece.vert .sc{ display:block; }
+  .lv-l0{ font-size:var(--fs-l0); line-height:1.10; font-weight:600; letter-spacing:.02em; }
+  .lv-l1{ font-size:var(--fs-l1); line-height:1.40; font-weight:600; letter-spacing:.04em; }
+  .lv-l2{ font-size:var(--fs-l2); line-height:1.55; font-weight:500; letter-spacing:.05em; }
+  .lv-l3{ font-size:var(--fs-l3); line-height:1.55; font-weight:400; letter-spacing:.08em; }
+  .lv-l4{ font-size:var(--fs-l4); line-height:1.60; letter-spacing:.10em; color:var(--ink-3); }
+  /* 金属渐变字：禁用 text-shadow（P0 ⑤） */
+  .metal{
+    background:linear-gradient(176deg,#FFF6DE 0%,#F4E1B2 20%,#EFDCAF 40%,
+                              #FFFBE9 58%,#EBD5A4 78%,#F6E7C0 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    -webkit-text-stroke:.6px rgba(74,48,12,.28);
+    filter:drop-shadow(0 8px 30px rgba(107,74,26,.42));
+  }
+
+  /* ---------- 图形件 ---------- */
+  .ringtext{ position:absolute; width:0; height:0; }   /* 必须是定位元素，否则整圈字跑到画外（坑 8） */
+  .ringtext span{ position:absolute; left:0; top:0; transform-origin:50% 50%;
+                  font-family:var(--serif); color:rgba(245,241,232,.42);
+                  white-space:nowrap; line-height:1.05; }
+  .mball{ position:absolute; border-radius:50%; box-sizing:border-box;
+          border:1.5px solid rgba(184,160,106,.55); will-change:transform,opacity; }
+  .mball.gold{ background:radial-gradient(circle at 38% 34%, rgba(215,185,121,.20), rgba(184,148,74,.05) 70%); }
+  .mball.gray{ border-color:rgba(245,241,232,.30); background:rgba(245,241,232,.03); }
+  .bdigit{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+           font-family:var(--serif); color:rgba(242,241,237,.55); }
+</style>
+</head>
+<body>
+<div id="viewport">
+  <div id="stage">
+    <canvas id="bg"></canvas>
+    <canvas id="grain"></canvas>
+    <div id="vignette"></div>
+    <div id="structures" class="layer"></div>
+    <div id="texts" class="layer"></div>
+    <div id="balls" class="layer"></div>
+    <div id="kicker"><span>知识短视频</span><span class="note"></span></div>
+    <div id="caption"><span class="idx"></span><span class="note"></span></div>
+    <div id="progress"><i></i></div>
+    <div id="debug"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  /* ============================================================
+     0 · 画布与坐标系（切 2K 只改这里 / 或用 ?cw=&ch=）
+     ============================================================ */
+  var P0 = new URLSearchParams(location.search);
+  var CANVAS = { w: parseFloat(P0.get('cw') || '1080'), h: parseFloat(P0.get('ch') || '1920') };  // 9:16 竖屏
+  if (!isFinite(CANVAS.w) || CANVAS.w < 640) CANVAS.w = 1080;
+  if (!isFinite(CANVAS.h) || CANVAS.h < 360) CANVAS.h = 1920;
+  var W = CANVAS.w, H = CANVAS.h, TOTAL = 20;          // ← 全片总时长（秒）
+  function rx(r){ return Math.round(r * W); }
+  function ry(r){ return Math.round(r * H); }
+  function kH(){ return H / 1080; }
+  function rFont(px){ return Math.round(px * kH() * 1000) / 1000; }   // 字号不取整（2K 下取整偏差 ~1%）
+  function rSize(px){ return Math.round(px * kH() * 1000) / 1000; }
+  var SAFE = { left:rx(.05), right:rx(.95), top:ry(.05), bottom:ry(.95) };
+  var STAGE_IN = 0.80, PIECE_FADE = 0.85, FLOAT_PERIOD = 14, OUT_LEAD = 0.90;
+  /* 变速剪辑（README §5.7）：出场 0.30s 向左加速到 -230px、淡出在 60% 行程处完成；
+     入场 0.30s 从 +230px 减速度归位、亮度下限 0.15（防两屏之间出现空场）。
+     切点两侧的 −230 → +230 跳变由透明度谷底遮住：出场已淡尽、入场只剩 0.15。 */
+  var CUT_OUT = 0.30, CUT_IN = 0.30, CUT_FADE = 0.18, CUT_TRAVEL = 230, CUT_FLOOR = 0.15;
+
+  var textsRoot = document.getElementById('texts');
+  var structRoot = document.getElementById('structures');
+  var ballsRoot = document.getElementById('balls');
+  var stageEl = document.getElementById('stage');
+  var kickerEl = document.getElementById('kicker');
+  var captionEl = document.getElementById('caption');
+  var capNote = captionEl.querySelector('.note');
+  var capIdx = captionEl.querySelector('.idx');
+  var kickNote = kickerEl.querySelector('.note');
+  var progressBar = document.querySelector('#progress i');
+  var debugEl = document.getElementById('debug');
+  var params = P0;
+  if (params.get('debug') === '1') debugEl.style.display = 'block';
+
+  (function applyCanvas(){
+    var st = document.documentElement.style;
+    st.setProperty('--safe-x', rx(.05) + 'px');
+    st.setProperty('--safe-top', ry(.05) + 'px');
+    st.setProperty('--safe-bottom', ry(.05) + 'px');
+    st.setProperty('--max-w', rx(.43) + 'px');           // 竖屏行宽 ≈460px（1080 的 0.43）
+    /* 竖屏字号基准（绝对 px，README §27.3）：L0 160 / L1 72 / L2 50 / L3 36 / L4 26。
+       rFont 按 kH()=H/1080 归一，所以输入 = 目标绝对 px × (1080/H)；1080×1920 时 ×0.5625 即还原为目标 px，
+       ?cw=2160&ch=3840 出 2K 竖屏时字号自动等比放大。 */
+    var VS = 1080 / CANVAS.h;
+    [['--fs-l0',160*VS],['--fs-l1',72*VS],['--fs-l2',50*VS],['--fs-l3',36*VS],['--fs-l4',26*VS],
+     ['--fs-kicker',22*VS],['--fs-caption',24*VS],['--fs-idx',20*VS]]
+      .forEach(function(kv){ st.setProperty(kv[0], rFont(kv[1]) + 'px'); });
+    st.setProperty('--tag-dot', rSize(8) + 'px');
+    stageEl.style.width = W + 'px'; stageEl.style.height = H + 'px';
+    var c1 = document.getElementById('bg'), c2 = document.getElementById('grain');
+    c1.width = W; c1.height = H; c2.width = W; c2.height = H;
+  })();
+
+  /* ============================================================
+     1 · 通用工具
+     ============================================================ */
+  function clamp01(v){ return v < 0 ? 0 : v > 1 ? 1 : v; }
+  function lerp(a, b, x){ return a + (b - a) * x; }
+  function easeOutCubic(x){ return 1 - Math.pow(1 - x, 3); }
+  function smoothstep(x){ x = clamp01(x); return x * x * (3 - 2 * x); }
+  function fadeIn(t, at, dur){ return smoothstep((t - at) / (dur || PIECE_FADE)); }
+  function fadeOut(t, at, dur){ return 1 - smoothstep((t - at) / (dur || OUT_LEAD)); }
+  /* ---- 变速剪辑：一个全局水平偏移，物品与文字一起位移（相对关系不变） ---- */
+  function cutOffset(t){
+    var T = rSize(CUT_TRAVEL);
+    for (var i = 0; i < CUTS.length; i++){
+      var c = CUTS[i];
+      if (t > c - CUT_OUT && t <= c){ var u = (t - (c - CUT_OUT)) / CUT_OUT; return -T * (u * u * u); }
+      if (t > c && t <= c + CUT_IN){ var v = (t - c) / CUT_IN; var w = 1 - v; return T * (w * w * w * w); }
+    }
+    return 0;
+  }
+  /* 出场侧：在切点前 0.30s 起，0.18s 内降到 0.15 就停住，一直亮到切点才归零
+     （cut-catalog 的 Phase 1 就是「不透明度 1.0 → 0.15」，硬切才置 0）。
+     好处：切点那一帧两边各有 0.15，不会出现「旧屏已没、新屏第一句还没到点」的空场帧。 */
+  function cutExitFade(t, c){
+    if (t <= c - CUT_OUT) return 1;
+    if (t > c) return 0;                                   // 切点之后交给出场屏自己
+    var u = (t - (c - CUT_OUT)) / CUT_FADE;
+    return u >= 1 ? CUT_FLOOR : 1 - (1 - CUT_FLOOR) * u;
+  }
+  /* 末屏不做出场：片子要停在末屏（A6 / playback-check） */
+  function screenExit(t, t1){ return t1 >= TOTAL - 0.001 ? 1 : cutExitFade(t, t1); }
+  /* 入场亮度下限：只抬「本来就在切点附近出场」的元素，让它提前 ≤0.30s 以 0.15 亮着入场，
+     否则出场在切点淡尽、新屏第一句话还没到点，会出现一帧空场（smoke-check 抓到过）。
+     开场（第 0 屏）不是换页，不加下限。 */
+  function screenIdxAt(t){ for (var i = 0; i < SCREENS.length; i++) if (t >= SCREENS[i].t0 && t < SCREENS[i].t1) return i; return 0; }
+  function cutFloor(t, due, screenIdx){
+    if (screenIdx <= 0) return 0;
+    var s = SCREENS[screenIdx];
+    if (due > s.t0 + CUT_IN) return 0;
+    return (t >= s.t0 && t < s.t0 + CUT_IN) ? CUT_FLOOR : 0;
+  }
+  function mulberry32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  function mk(tag, cls, style){
+    var el = document.createElement(tag);
+    if (cls) el.className = cls;
+    if (style) for (var k in style) el.style[k] = style[k];
+    return el;
+  }
+
+  /* ============================================================
+     2 · 分幕网格 + 节拍表（画面 / 光影 / 音效三处只读这一张表）
+     ============================================================ */
+  var SCREENS = [
+    { id:'s1', label:'钩子',   note:'你自己选的号码',   t0:0,  t1:6,  bg:{ rays:1.00, glow:1.00 } },
+    { id:'s2', label:'概念',   note:'ILLUSION OF CONTROL', t0:6, t1:14, bg:{ rays:0.22, glow:0.55 } },
+    { id:'s3', label:'量化数据', note:'同样的概率，不同的心理定价', t0:14, t1:20, bg:{ rays:0.34, glow:0.60 } }
+  ];
+  /* 换页切点＝除末屏外每屏的 t1（末屏没有下一屏，不切） */
+  var CUTS = SCREENS.slice(0, SCREENS.length - 1).map(function(s){ return s.t1; });
+  function screenT0Of(t){ for (var i = 0; i < SCREENS.length; i++) if (t >= SCREENS[i].t0 && t < SCREENS[i].t1) return SCREENS[i].t0; return 0; }
+  var S1_T = {
+    ball: 0.40, growDur: 1.50, digit: 1.00,
+    tag1: 2.50, tag2: 3.10, title: 3.90, title2: 4.50, note: 3.00, out: 6.00
+  };
+  var S2_T = {
+    ring: 6.00, ringDur: 1.50, orb: 7.20,
+    gold: 8.00, gray: 8.80, goldTag: 9.60, grayTag: 10.30, sweep: 11.00,
+    title: 10.40 /* ★重音① */, sub: 11.60, note0: 8.20, note1: 8.80, out: 14.00
+  };
+  var S3_T = {
+    cluL: 14.00, cluR: 14.80, bars: 15.20,
+    num: 17.40 /* ★重音② */, label: 17.70,
+    intro1: 14.20, intro2: 14.90, note1: 18.40, out: 20.00
+  };
+
+  /* ============================================================
+     3 · 主角物品（ITEMS）· 一张基准坐标表被图形 / 文字 / 光源三处共用
+     ============================================================ */
+  var ITEM_POS = {
+    ball7:{ x:0.780, y:0.360 },   // S1 金球「7」
+    ring: { x:0.500, y:0.460 },   // S2 圆环
+    gold: { x:0.220, y:0.550 },   // S2 左：金球簇（自己选号）
+    gray: { x:0.780, y:0.550 },   // S2 右：灰球簇（机选）
+    num4x:{ x:0.500, y:0.480 },   // S3 金属大数字
+    barL: { x:0.280, y:0.860 },   // S3 左柱（8 球）
+    barR: { x:0.720, y:0.860 }    // S3 右柱（2 球）
+  };
+  /* 每个物品：出场 / 退场 / 漂浮 / 呼吸 / 聚散（半径系数 ev→到 out 之间从 from 变到 to） */
+  var ITEM_SPEC = {
+    ball7:{ ev:S1_T.ball,  out:6.00, bobAmp:12,  bobPeriod:26, breathe:6.0, on:1 },
+    ring: { ev:S2_T.ring,  out:14.00, bobAmp:0,  bobPeriod:30, breathe:9.0, on:1 },
+    gold: { ev:S2_T.gold,  out:14.00, bobAmp:5,  bobPeriod:22, breathe:7.0, on:1, gather:[S2_T.gold, S2_T.orb+3.5, 1.45, 0.50] },
+    gray: { ev:S2_T.gray,  out:14.00, bobAmp:7,  bobPeriod:18, breathe:8.0, on:1, gather:[S2_T.gray, S2_T.orb+3.5, 0.75, 1.45] },
+    num4x:{ ev:S3_T.num,   out:20.00, bobAmp:0,  bobPeriod:30, breathe:6.0, on:1 },
+    barL: { ev:S3_T.cluL,  out:20.00, bobAmp:9,  bobPeriod:2.6, breathe:30, on:1 },   // 左组：轻微晃动
+    barR: { ev:S3_T.cluR,  out:20.00, bobAmp:18, bobPeriod:1.7, breathe:30, on:1 }    // 右组：乱跳
+  };
+  var ITEMS = {};
+  for (var ik in ITEM_POS) if (Object.prototype.hasOwnProperty.call(ITEM_POS, ik)) {
+    ITEMS[ik] = { cx:rx(ITEM_POS[ik].x), cy:ry(ITEM_POS[ik].y), ev:(ITEM_SPEC[ik]||{}).ev || 0,
+                  dx:0, dy:0, k:1, light:1, on:0, r:1 };
+  }
+  /* 附着定位：物品中心 + 固定相对偏移（rx/ry）→ 标签落点，与物品保持恒定相对距离 */
+  function at(item, ox, oy){
+    var p = ITEM_POS[item] || ITEM_POS.ring;
+    return { x:rx(p.x + (ox || 0)), y:ry(p.y + (oy || 0)) };
+  }
+  function attachToLabel(item, text, opt){
+    opt = opt || {};
+    var a = at(item, opt.ox, opt.oy);
+    return {
+      s:opt.s, t:text, x:a.x, y:a.y, lv:opt.lv || 'L3', fs:opt.fs, lh:(opt.lh == null ? 1.30 : opt.lh),
+      w:opt.w, start:opt.start, kai:true, tag:!!opt.tag, vert:!!opt.vert, c:opt.c,
+      opBreathe:!!opt.opBreathe, nowrap:opt.nowrap !== false,
+      attach:{ item:item, followScale:opt.followScale !== false, followAlpha:opt.followAlpha !== false,
+               opMin:(opt.opMin == null ? 0.50 : opt.opMin), opMax:(opt.opMax == null ? 1.00 : opt.opMax) }
+    };
+  }
+
+  /* ============================================================
+     4 · 文案分片表（原稿一句不删：拆片 → 降级 → 附着）
+     ============================================================ */
+  var PIECES = [
+    /* ---- S1 钩子 0–6s · 主角：金球「7」 ---- */
+    attachToLabel('ball7', '同样是彩票，',   { s:0, ox:-0.320, oy:-0.060, w:rSize(422), start:S1_T.tag1, fs:rFont(40), tag:true }),
+    attachToLabel('ball7', '自己选的号码，', { s:0, ox:-0.320, oy: 0.015, w:rSize(422), start:S1_T.tag2, fs:rFont(40), tag:true }),
+    { s:0, t:'你有没有发现一件', x:rx(0.055), y:ry(0.300), lv:'L3', start:S1_T.title,  fs:rFont(52), c:'rgba(245,241,232,.70)' },
+    { s:0, t:'很奇怪的事。',    x:rx(0.055), y:ry(0.398), lv:'L1', start:S1_T.title2, fs:rFont(88), metal:true, breathe:true, nowrap:true },
+    { s:0, t:'机选的，心里就觉得不靠谱', x:rx(0.10), y:ry(0.805), lv:'L3', start:S1_T.note, fs:rFont(32), c:'rgba(245,241,232,.60)' },
+
+    /* ---- S2 概念 6–12s · 主角：圆环 + 金球簇 + 灰球簇 ---- */
+    { s:1, t:'你只是产生了一种错觉。', x:rx(0.10), y:ry(0.275), lv:'L3', start:S2_T.note0, fs:rFont(36), c:'rgba(245,241,232,.52)' },
+    { s:1, t:'心理学上，叫做',        x:rx(0.418), y:ry(0.252), lv:'L3', start:S2_T.note1, fs:rFont(38), kai:true },
+    { s:1, t:'控制错觉',              x:rx(0.5) - rSize(278), y:ry(0.334), lv:'L0', start:S2_T.title, fs:rFont(136), lh:1.00, metal:true, breathe:true, nowrap:true },
+    { s:1, t:'选择权，改变不了客观概率', x:rx(0.5) - rSize(208), y:ry(0.478), lv:'L3', start:S2_T.sub, fs:rFont(32), c:'rgba(245,241,232,.56)', nowrap:true },
+    attachToLabel('gold', '自己选号', { s:1, ox:-0.052, oy:-0.190, start:S2_T.goldTag, fs:rFont(40), tag:true, c:'rgba(245,241,232,.72)' }),
+    attachToLabel('gray', '机选',     { s:1, ox:-0.031, oy:-0.190, start:S2_T.grayTag, fs:rFont(40), tag:true, c:'rgba(245,241,232,.62)' }),
+    /* 竖排 / 斜排边注在本模板里留空：加片会挤掉「自主节拍 ≥0.6s」与「屏尾停留 ≥0.7s」，
+       需要时按 README §5.3 的排版方式补，并重跑 narrative.mjs。 */
+
+    /* ---- S3 量化数据 12–18s · 主角：4× + 左右球簇 + 生长柱 ---- */
+    { s:2, t:'自己选号那一组，', x:rx(0.300), y:ry(0.115), lv:'L3', start:S3_T.intro1, fs:rFont(38), c:'rgba(245,241,232,.52)' },
+    { s:2, t:'开出的售价，',     x:rx(0.300), y:ry(0.180), lv:'L3', start:S3_T.intro2, fs:rFont(38), c:'rgba(245,241,232,.52)' },
+    { s:2, t:'4×',              x:rx(0.5) - rSize(150), y:ry(0.290), lv:'L0', start:S3_T.num, fs:rFont(300), metal:true, pop:true, nowrap:true },
+    attachToLabel('num4x', '足足高出四倍。', { s:2, ox:-0.083, oy:0.180, start:S3_T.label, fs:rFont(44), c:'rgba(245,241,232,.78)' }),
+    { s:2, t:'仅仅因为亲手选择，', x:rx(0.110), y:ry(0.820), lv:'L3', start:S3_T.note1, fs:rFont(36), c:'rgba(245,241,232,.60)' }
+  ];
+
+  /* ============================================================
+     5 · 光源（全片漫游）+ 扫光联动 LightLink
+     ============================================================ */
+  var LIGHT_R = rSize(640);
+  /* 光源关键帧：由「元素被读到的时刻 + 元素实测位置」自动生成（生产项目里由 tools/light-keys.mjs 生成）。
+     算法：每个元素取一个测量时刻（出场 +1.2s），把时刻相近、位置相近的测量点归成一组，
+     同组的关键帧共用一个位置（组内位置均值）——这样「同一瞬间要照亮的两三个元素」都落在光里（A17）。
+     组内位置均值在 measurePieces() 之后才拿得到，所以真正的生成放在 buildLightKeys()。 */
+  var LIGHT_KEYS = [];
+  function buildLightKeys(){
+    var list = [];
+    SCREENS.forEach(function(sc, si){
+      list.push({ t:sc.t0 + 0.05, x:rx(0.30), y:ry(0.30), hard:true });
+      pieceEls.filter(function(r){ return r.rec.s === si; })
+        .sort(function(a, b){ return a.rec.start - b.rec.start; })
+        .forEach(function(r){
+          /* 关键帧要放在「元素被读到的时刻」上：A17「出场时它在光里」与 A31「它真的被点亮过」
+             用的是同一批采样时刻，所以每个元素在自己被读到的时刻前后各占一帧
+             （±0.15s 的停留），中间不让别的元素插进来 —— 否则同一瞬间光只能照到一个。
+             读取时刻 = 出场 + 偏移：附着标签 +0.8s（淡入快）/ L0·L1 +1.3s（大字要读完）/ L3 +1.5s。 */
+          var off = r.rec.attach ? 0.80 : (r.rec.lv === 'L0' || r.rec.lv === 'L1') ? 1.30 : 1.50;
+          var at = Math.min(Math.max(sc.t0 + 0.5, r.rec.start + off), sc.t1 - 0.20);
+          /* 两帧之间给 30px 的倾斜漂移：光"停"在元素上也要保持 ~100px/s 的移动，
+             否则会被 A17 判成「柔光静止」（慢速段判据：<8px/s 的连续段 ≤0.5s 且占比 ≤5%）。 */
+          list.push({ t:at - 0.15, x:r.cx - rSize(15), y:r.cy - rSize(15) });
+          list.push({ t:at + 0.15, x:r.cx + rSize(15), y:r.cy + rSize(15) });
+        });
+      list.push({ t:sc.t1 - 0.05, x:rx(0.50), y:ry(0.50), hard:true });
+    });
+    list.sort(function(a, b){ return a.t - b.t; });
+    LIGHT_KEYS = [];
+    var lastT = -9;
+    list.forEach(function(m){
+      var t = Math.max(m.t, lastT + 0.05);       // 撞在同一时刻的关键帧按 0.05s 依次错开
+      t = Math.min(t, TOTAL - 0.02);
+      lastT = t;
+      LIGHT_KEYS.push({ t:t, x:m.x, y:m.y });
+    });
+  }
+  function lightAt(t){
+    var i = 0;
+    while (i < LIGHT_KEYS.length - 2 && LIGHT_KEYS[i + 1].t <= t) i++;
+    var a = LIGHT_KEYS[i], b = LIGHT_KEYS[i + 1] || a;
+    var u = b.t > a.t ? clamp01((t - a.t) / (b.t - a.t)) : 0;
+    u = smoothstep(u);
+    return { x:lerp(a.x, b.x, u), y:lerp(a.y, b.y, u) };
+  }
+  /* 光照衰减：距离 > LIGHT_R 记 0，中心记 1 */
+  function falloff(d){
+    var x = clamp01(1 - d / LIGHT_R);
+    return x * x * (3 - 2 * x);
+  }
+  /* 亮因子（0.74 ↔ 1.00）：光扫到时"被点亮"、出光区后"被压暗"的同一把尺子。
+     元件（球 / 圆环 / 文字）与体检脚本必须用同一条公式，否则 A31 逐帧比对必然对不上。 */
+  function litFactor(cx, cy, L){
+    return 0.74 + 0.26 * smoothstep((LIGHT_R - Math.hypot(cx - L.x, cy - L.y)) / (LIGHT_R * 0.85));
+  }
+  function lightOf(it, L){
+    /* 未取整坐标：验算扫光漫游速度时取整会把 1px 的移动抹成 0 */
+    return litFactor(it.cx + it.dx, it.cy + it.dy, L);
+  }
+
+  /* ============================================================
+     6 · 物品每帧更新（只更新 dx/dy/k/light/on）
+     ============================================================ */
+  function updateItems(t, L){
+    for (var k in ITEMS) if (Object.prototype.hasOwnProperty.call(ITEMS, k)) {
+      var it = ITEMS[k], sp = ITEM_SPEC[k] || { ev:0, out:TOTAL };
+      /* 出场改用变速剪辑的「切点前淡出」（原来是 t1 之后淡 0.9s 的原地叠化）；
+         入场给 0.15 下限，让新屏在切点那一刻就有东西可看 */
+      it.on = Math.max(fadeIn(t, sp.ev, STAGE_IN), cutFloor(t, sp.ev, screenIdxAt(sp.ev))) * screenExit(t, sp.out);
+      it.dx = Math.round((sp.bobAmp || 0) * Math.sin(2 * Math.PI * (t - sp.ev) / (sp.bobPeriod || 20))) + cutOffset(t);
+      it.dy = Math.round((sp.bobAmp || 0) * 0.6 * Math.cos(2 * Math.PI * (t - sp.ev) / (sp.bobPeriod || 20)));
+      /* 物品不再做缩放呼吸（循环缩放＝廉价表征，README §5.7）；「活着」交给 bobAmp 位移与光照。
+         球簇的聚散仍写在 k 上——那是 A19/A31 的口径，不能挪。 */
+      it.k = 1;
+      /* 聚散：半径系数（金球聚拢 / 灰球弥散）—— 必须写进 k，
+         因为「球簇平均半径」与「物品缩放」在体检里是同一个量（A19/A31 口径）。 */
+      if (sp.gather) {
+        var g = sp.gather, u = smoothstep(clamp01((t - g[0]) / (g[1] - g[0])));
+        it.k *= lerp(g[2], g[3], u);
+      }
+      it.light = lightOf(it, L);
+    }
+  }
+
+  /* ============================================================
+     7 · 图形件（母题）：球簇 = DOM .mball（可被工具链量测）
+     ============================================================ */
+  var BALL_SPECS = [];
+  function ballSpec(item, n, R, d, t0, t1, cls, phase){
+    var it = ITEMS[item];
+    for (var i = 0; i < n; i++) {
+      var a = phase + i * (2 * Math.PI / n);
+      BALL_SPECS.push({ item:item, a:a, R:R, d:d, t0:t0, t1:t1, cls:cls, el:null });
+    }
+  }
+  /* S2：左金球簇 6 颗（聚拢）/ 右灰球簇 6 颗（弥散） */
+  ballSpec('gold', 6, rSize(150), rSize(58), S2_T.gold, 14, 'mball gold', 0.35);
+  ballSpec('gray', 6, rSize(140), rSize(52), S2_T.gray, 14, 'mball gray', 0.00);
+  /* S3：左 8 颗金球 / 右 2 颗灰球（数量对比 = 概率相同、心理定价不同） */
+  ballSpec('barL', 8, rSize(190), rSize(44), S3_T.cluL, 20, 'mball gold', 0.15);
+  ballSpec('barR', 2, rSize(190), rSize(44), S3_T.cluR, 20, 'mball gray', 1.10);
+
+  BALL_SPECS.forEach(function(sp){
+    var el = mk('div', sp.cls, { width:sp.d + 'px', height:sp.d + 'px' });
+    el.setAttribute('data-item', sp.item);
+    el.style.opacity = '0';
+    ballsRoot.appendChild(el);
+    sp.el = el;
+  });
+  function updateBalls(t){
+    for (var i = 0; i < BALL_SPECS.length; i++) {
+      var sp = BALL_SPECS[i], it = ITEMS[sp.item];
+      var op = fadeIn(t, sp.t0 + i * 0.04, 0.6) * fadeOut(t, sp.t1, OUT_LEAD);
+      sp.el.style.opacity = op.toFixed(3);
+      /* 未出场的球「留在轨道上、只是不可见」——不要挪到中心或画外，
+         否则 __clusterRadii 会量到被污染的半径（本项目实测会被判为「半径没跟随缩放」）。 */
+      /* 球簇半径 = 基准半径 × 物品缩放 k（不叠加逐球抖动，否则「半径比 vs 缩放比」对不上） */
+      var a = sp.a;
+      var R = sp.R * it.k;
+      var bx = it.cx + it.dx + Math.cos(a) * R;
+      var by = it.cy + it.dy + Math.sin(a) * R * 0.62;
+      var half = sp.d / 2;
+      /* 位移取整像素：避免字形/圆边发虚与码率浪费（P0 ⑥） */
+      sp.el.style.transform = 'translate(' + Math.round(bx - half) + 'px,' + Math.round(by - half) + 'px)';
+      sp.el.style.opacity = (op * (0.55 + 0.45 * it.light) * (0.75 + 0.25 * it.k)).toFixed(3);
+    }
+  }
+
+  /* 金球「7」：轮廓生长 → 数字写入（S1 主角） */
+  var ball7El = mk('div', 'mball gold', { width:rSize(440) + 'px', height:rSize(440) + 'px', position:'absolute' });
+  /* 注意：单球物品不加 data-item —— __clusterRadii 量的是「多球簇的平均半径」，
+     单球（半径恒为 0）挂上去会让该指标失去意义（本项目实测会被判为异常）。 */
+  var ball7Digit = mk('div', 'bdigit', { fontSize:rFont(96) + 'px' });
+  ball7Digit.textContent = '7';
+  ball7El.appendChild(ball7Digit);
+  ballsRoot.appendChild(ball7El);
+  var ball7Ghost = mk('div', 'b7ghost', { position:'absolute', width:rSize(440) + 'px', height:rSize(440) + 'px',
+    borderRadius:'50%', border:'1.5px solid rgba(184,160,106,.22)', filter:'blur(2px)', opacity:'0' });
+  ballsRoot.appendChild(ball7Ghost);
+
+  function updateBall7(t){
+    var it = ITEMS.ball7, half = rSize(220);
+    var grow = easeOutCubic(clamp01((t - S1_T.ball) / 1.50));      // 轮廓 1.5s 生长
+    var dig  = clamp01((t - (S1_T.ball + S1_T.digit)) / 0.7);      // 数字写入
+    var op = it.on;
+    ball7El.style.opacity = op.toFixed(3);
+    ball7El.style.borderWidth = (1.5 * kH()).toFixed(2) + 'px';
+    var sc = 0.92 + 0.08 * grow;
+    ball7El.style.transform = 'translate(' + Math.round(it.cx + it.dx - half) + 'px,' +
+                              Math.round(it.cy + it.dy - half) + 'px) scale(' + sc.toFixed(4) + ')';
+    ball7Digit.style.opacity = (dig * 0.55).toFixed(3);
+    var ga = clamp01((t - (S1_T.ball + 2.10)) / 1.0) * 0.55 * op;  // 镜面虚影（暗示「假象」）
+    ball7Ghost.style.opacity = ga.toFixed(3);
+    ball7Ghost.style.transform = 'translate(' + Math.round(it.cx + it.dx - half) + 'px,' +
+                                 Math.round(it.cy + it.dy + rSize(180) - half) + 'px) scaleY(-1)';
+  }
+
+  /* S2 圆环：SVG 描边生长 + 环绕文字逐字排布 + 环上金点脉动 */
+  var RING = { cx:rx(ITEM_POS.ring.x), cy:ry(ITEM_POS.ring.y), r:rSize(324), c:0 };
+  RING.c = 2 * Math.PI * RING.r;
+  var ringNS = 'http://www.w3.org/2000/svg';
+  var ringSvg = document.createElementNS(ringNS, 'svg');
+  ringSvg.setAttribute('id', 'ringS2');
+  ringSvg.setAttribute('class', 'ringsvg');
+  ringSvg.setAttribute('width', W); ringSvg.setAttribute('height', H);
+  ringSvg.style.position = 'absolute'; ringSvg.style.left = '0'; ringSvg.style.top = '0';
+  ringSvg.style.opacity = '0';
+  var ringLine = document.createElementNS(ringNS, 'circle');
+  ringLine.setAttribute('class', 'ring-line');
+  ringLine.setAttribute('cx', RING.cx); ringLine.setAttribute('cy', RING.cy); ringLine.setAttribute('r', RING.r);
+  ringLine.setAttribute('fill', 'none'); ringLine.setAttribute('stroke', 'rgba(184,148,74,.55)');
+  ringLine.setAttribute('stroke-width', rSize(1.6));
+  ringLine.setAttribute('stroke-dasharray', RING.c.toFixed(2));
+  ringLine.setAttribute('stroke-dashoffset', RING.c.toFixed(2));
+  ringSvg.appendChild(ringLine);
+  var ringHot = document.createElementNS(ringNS, 'path');   // 环上扫光（.ring-hot 是体检脚本要读的元素）
+  ringHot.setAttribute('class', 'ring-hot');
+  ringHot.setAttribute('fill', 'none');
+  ringHot.setAttribute('stroke', 'rgba(215,185,121,.85)');
+  ringHot.setAttribute('stroke-width', rSize(2.2));
+  ringHot.setAttribute('stroke-linecap', 'round');
+  ringSvg.appendChild(ringHot);
+  structRoot.appendChild(ringSvg);
+
+  var ringDots = [];
+  for (var di = 0; di < 3; di++) {
+    var dot = mk('div', 'ring-dot', { position:'absolute', width:rSize(8)+'px', height:rSize(8)+'px',
+      borderRadius:'50%', background:'rgba(215,185,121,.75)', opacity:'0' });
+    structRoot.appendChild(dot); ringDots.push(dot);
+  }
+  /* 环绕文字：逐字 span 均匀分布在圆周上（transform: rotate(a) translateY(-r)） */
+  var RING_TEXT = '选择·控制·概率·错觉';
+  var ringTextEl = mk('div', 'ringtext', { left:RING.cx + 'px', top:RING.cy + 'px' });
+  structRoot.appendChild(ringTextEl);
+  var ringChars = [];
+  for (var ci = 0; ci < RING_TEXT.length; ci++) {
+    var sp = mk('span', null, { fontSize:rFont(30) + 'px' });
+    sp.textContent = RING_TEXT[ci];
+    ringTextEl.appendChild(sp); ringChars.push(sp);
+  }
+  function updateRing(t, L){
+    var grow = clamp01((t - S2_T.ring) / S2_T.ringDur);
+    var op = fadeIn(t, S2_T.ring, 0.6) * fadeOut(t, 12, OUT_LEAD);
+    ringSvg.style.opacity = (op * 0.95).toFixed(3);
+    ringLine.setAttribute('stroke-dashoffset', (RING.c * (1 - easeOutCubic(grow))).toFixed(2));
+    ringLine.setAttribute('stroke-width', rSize(1.15 + 0.7 * (1 - grow)));
+    /* 环上扫光：绕环一圈，周期 6s（时间常数断言见 P0 ⑦） */
+    var spin = 0.9;                                   // °/s
+    if (spin < 0.3) console.warn('[orbit] 转速过低，检查时间常数');
+    var a0 = (t * spin) % 360;
+    var a1 = a0 + 34;
+    ringHot.setAttribute('d', arcPath(RING.cx, RING.cy, RING.r, a0, a1));
+    ringHot.setAttribute('opacity', (op * (0.35 + 0.5 * it0(RING.cx, RING.cy, L))).toFixed(3));
+    /* 环绕文字逐字生长：每 4 字一响（音效表同步） */
+    for (var i = 0; i < ringChars.length; i++) {
+      var f = clamp01((t - (S2_T.ring + 0.6 + i * 0.22)) / 0.5);
+      var a = (i / RING_TEXT.length) * 360 - 90;
+      var rad = a * Math.PI / 180;
+      ringChars[i].style.opacity = (f * op * 0.85).toFixed(3);
+      ringChars[i].style.transform =
+        'translate(-50%,-50%) rotate(' + a.toFixed(2) + 'deg) translateY(' + (-RING.r * 1.06).toFixed(1) + 'px)';
+    }
+    for (var j = 0; j < ringDots.length; j++) {
+      var pa = (j / ringDots.length) * 360 - 90 + 18;
+      var pr = pa * Math.PI / 180;
+      var pulse = 0.5 + 0.5 * Math.sin(2 * Math.PI * (t - S2_T.orb) / 3.0 - j * 0.9);
+      ringDots[j].style.opacity = (clamp01((t - S2_T.orb) / 0.6) * pulse * 0.9 * op).toFixed(3);
+      ringDots[j].style.transform = 'translate(' +
+        (RING.cx + Math.cos(pr) * (RING.r - rSize(9)) - rSize(4)) + 'px,' +
+        (RING.cy + Math.sin(pr) * (RING.r - rSize(9)) - rSize(4)) + 'px)';
+    }
+  }
+  function it0(x, y, L){ return falloff(Math.sqrt(Math.pow(x - L.x, 2) + Math.pow(y - L.y, 2))); }
+  function arcPath(cx, cy, r, a0, a1){
+    function pt(a){ var R = a * Math.PI / 180; return [cx + Math.cos(R) * r, cy + Math.sin(R) * r]; }
+    var p0 = pt(a0), p1 = pt(a1), large = (a1 - a0) > 180 ? 1 : 0;
+    return 'M' + p0[0].toFixed(1) + ',' + p0[1].toFixed(1) + ' A' + r + ',' + r + ' 0 ' + large + ' 1 ' +
+           p1[0].toFixed(1) + ',' + p1[1].toFixed(1);
+  }
+
+  /* S3 对比柱：柱底锚在 yBottom，向上生长（top = yBottom - h，别忘记减柱高 —— 坑 9） */
+  var BAR_H = { gold:rSize(470), gray:rSize(118) };
+  var barEls = {};
+  ['gold', 'gray'].forEach(function(kind){
+    var x = kind === 'gold' ? rx(0.265) : rx(0.700);
+    var w = rSize(84), yBottom = ry(0.862);
+    var el = mk('div', 'vbar vbar-' + kind, { position:'absolute', width:w + 'px', top:(yBottom - BAR_H[kind]) + 'px',
+      height:BAR_H[kind] + 'px', transformOrigin:'50% 100%', transform:'scaleY(0)' });
+    el.style.border = (kind === 'gold' ? 2.4 : 2.0) * kH() + 'px solid ' + (kind === 'gold' ? 'rgba(184,148,74,.85)' : '#B4B4B4');
+    el.style.background = kind === 'gold'
+      ? 'linear-gradient(180deg, rgba(215,185,121,.22), rgba(184,148,74,.06))'
+      : 'linear-gradient(180deg, rgba(245,241,232,.34), rgba(245,241,232,.08))';
+    el.setAttribute('data-item', 'bar' + (kind === 'gold' ? 'L' : 'R'));
+    structRoot.appendChild(el); barEls[kind] = { el:el, x:x, w:w, yBottom:yBottom };
+  });
+  function updateBars(t){
+    var grow = easeOutCubic(clamp01((t - S3_T.bars) / 0.9));
+    var op = fadeIn(t, S3_T.bars, 0.5) * fadeOut(t, 20, OUT_LEAD);
+    ['gold', 'gray'].forEach(function(kind){
+      var b = barEls[kind];
+      b.el.style.opacity = op.toFixed(3);
+      b.el.style.transform = 'scaleY(' + (grow * (kind === 'gold' ? 1 : 0.25)).toFixed(4) + ')';
+      b.el.style.left = b.x + 'px';
+    });
+  }
+
+  /* ============================================================
+     8 · 文本分片渲染（含 LightLink 扫光联动）
+     ============================================================ */
+  var pieceEls = [];
+  PIECES.forEach(function(p, i){
+    /* 层级 / 字体 / 形态的类写在最外层 .piece 上：体检脚本读的就是它的 computed style */
+    var cls = 'lv-' + p.lv.toLowerCase();
+    if (p.kai) cls += ' kai';
+    if (p.tag) cls += ' tag';
+    if (p.vert) cls += ' vert';
+    if (p.nowrap) cls += ' nowrap';
+    if (p.metal) cls += ' metal';
+    var el = mk('div', 'piece ' + cls, { left:p.x + 'px', top:p.y + 'px' });
+    el.setAttribute('data-screen', p.s);
+    el.setAttribute('data-lv', p.lv);
+    el.setAttribute('data-index', i);
+    if (p.fs) el.style.fontSize = p.fs + 'px';
+    if (p.lh) el.style.lineHeight = p.lh;
+    if (p.w) el.style.width = p.w + 'px';
+    if (p.c) el.style.color = p.c;
+    var scaler = mk('span', 'sc');          // 内层只负责缩放，不写 translate
+    scaler.textContent = p.t;
+    if (p.tag) { el.appendChild(mk('i')); el.appendChild(scaler); }
+    else el.appendChild(scaler);
+    textsRoot.appendChild(el);
+    pieceEls.push({ rec:p, el:el, scaler:scaler, x:p.x, y:p.y, w:0, h:0, cx:p.x, cy:p.y });
+  });
+  /* 文字盒的实测尺寸只量一次（绝对定位 + 无 vw，尺寸不随帧变化）：
+     扫光联动用的是"文字盒中心"，必须与体检脚本量到的 DOM 盒一致。 */
+  function measurePieces(){
+    pieceEls.forEach(function(rec){
+      rec.w = rec.el.offsetWidth; rec.h = rec.el.offsetHeight;
+      rec.cx = rec.x + rec.w / 2; rec.cy = rec.y + rec.h / 2;
+    });
+  }
+  measurePieces();
+  buildLightKeys();
+
+  function renderPiece(rec, t, L){
+    var p = rec.rec, el = rec.el, scaler = rec.scaler;
+    var isLast = p.s === SCREENS.length - 1;
+    /* 附着标签的入场淡入要短于 0.5s：A31 从「出场 +0.5s」开始逐帧比对，
+       那之后标签的明暗必须完全等于扫光公式（不能再叠一层入场淡入）。 */
+    var fadeDur = p.attach ? 0.20 : PIECE_FADE;
+    /* 换页用变速剪辑：出场提前到切点前（screenExit），入场给 0.15 下限。
+       附着标签不加下限、也不单独淡出——它的明暗跟着物品的 on 走（A28/A31 口径）。 */
+    var vis = fadeIn(t, p.start, fadeDur) * (p.attach ? 1 : screenExit(t, (SCREENS[p.s] || {}).t1));
+    if (!p.attach) vis = Math.max(vis, cutFloor(t, p.start, p.s));
+    var it = p.attach ? ITEMS[p.attach.item] : null;
+    var dx = 0, dy = 0, k = 1;
+    if (it) {
+      dx = p.attach.followScale ? it.dx * 1.0 : 0;
+      dy = p.attach.followScale ? it.dy * 1.0 : 0;
+      k = p.attach.followScale ? (0.96 + 0.04 * it.k) : 1;
+    }
+    /* 入场：位移在外层（translate）、缩放与模糊在内层（scale + blur）—— 两个 transform / filter 各管一层 */
+    var inU = clamp01((t - p.start) / fadeDur);
+    var riseY = (1 - easeOutCubic(inU)) * rSize(18);
+    var blur = (1 - easeOutCubic(inU)) * 5;
+    scaler.style.filter = blur > 0.05 ? 'blur(' + blur.toFixed(2) + 'px)' : 'none';
+    /* 悬浮漂移：极慢，制造「悬浮」而不是「贴纸」（附着标签不漂，保持与物品恒定距离） */
+    var floatY = (p.attach ? 0 : Math.sin(2 * Math.PI * (t - p.start) / FLOAT_PERIOD) * rSize(6));
+    /* 保持静止时的「活着」＝细微抖动（README §5.7）：低幅位移 ≤1.6px、周期 3.6–4.8s，
+       种子由「屏号 + 出场时刻 + 字数」导出——确定性，同一个 t 永远同一张图。
+       旧版这里是金属字呼吸（0.90↔1.00 循环缩放），循环缩放是廉价表征，已取消。
+       附着标签一律不抖：A28 要求它与物品的相对距离恒定。 */
+    if (p.breathe && !p.attach) {
+      var jseed = (p.s * 13 + Math.round(p.start * 10) + p.t.length) % 97;
+      var jp = 3.6 + 1.2 * ((jseed % 5) / 4);
+      dx += Math.sin(2 * Math.PI * (t - p.start) / jp + jseed) * rSize(1.6);
+      dy += Math.cos(2 * Math.PI * (t - p.start) / (jp * 1.37) + jseed) * rSize(1.6);
+    }
+    /* 换页位移：附着标签从 it.dx 里已经拿到了这个全局偏移，不能再加一遍
+       （加两遍＝相对物品偏移 230px，A19/A28 会当场判「图层割裂」）。 */
+    if (!p.attach) dx += cutOffset(t);
+    el.style.transform = 'translate(' + Math.round(dx) + 'px,' + Math.round(dy + riseY + floatY) + 'px)';
+    /* 数字弹入：只作用于 L0、L1（金属字已经是最亮处，不再叠缩放循环） */
+    if (p.pop) {
+      var pu = clamp01((t - p.start) / 0.9);
+      k *= pu < 0.5 ? lerp(1.00, 1.02, pu / 0.5) : lerp(1.02, 1.00, (pu - 0.5) / 0.5);
+    }
+    scaler.style.transform = 'scale(' + k.toFixed(4) + ')';
+    /* 明暗：L0/L1 常亮（末屏金句另有 0.94 下限）；其余随扫光联动。
+       附着文字用 max(自身光照, 物品光照)，并把结果写进 __pieces() 的 lf —— A31 逐帧比对的就是它。 */
+    var op, lf;
+    if (p.lv === 'L0' || p.lv === 'L1') {
+      op = vis;
+    } else {
+      /* 自身光照要按**当前**位置取（静态中心 + 本帧位移 + 入场上浮），不能用静态测量中心：
+         换页位移可达 ±230px，用静态中心会让页面与 attach-check 的逐帧换算对不上（A31 差 0.04）。 */
+      var own = litFactor(rec.cx + dx, rec.cy + dy + riseY, L);
+      var itemLight = it ? it.light * it.on : 0;
+      var reach = Math.max(own, itemLight);
+      var c = p.attach || { opMin:0.50, opMax:1.00 };
+      lf = (c.opMin + (c.opMax - c.opMin) * clamp01((reach - 0.74) / 0.26)) * (it ? it.on : 1);
+      if (isLast && p.attach) lf = Math.max(lf, 0.94);     // 末屏：金句页文字保持常亮
+      op = lf * vis;
+    }
+    /* lf 必须同时写进「数据记录」和「DOM 属性 data-lf」：
+       体检脚本逐帧读的是 DOM 上的 data-lf，用来跟你页面里的同一条公式对账（A31）。 */
+    var lfOut = (lf == null ? NaN : lf);
+    if (isFinite(lfOut)) {
+      p.lf = +lfOut.toFixed(4);
+      el.setAttribute('data-lf', lfOut.toFixed(4));
+    } else {
+      p.lf = undefined;
+      el.removeAttribute('data-lf');
+    }
+    el.style.opacity = op.toFixed(3);
+    /* 金属流动高光：高光带随光源在字形上滑动（A18；摆动 ≥40% 才算「流动」） */
+    if (p.metal) {
+      /* 相位由光源相对元素的横向偏移决定（光照到哪高光跑到哪）+ 16s 慢周期，
+         写的是 background-position 的纵向分量；实测摆动要 ≥40% 才算「流动」 */
+      var phase = 2 * Math.PI * t / 16 + (L.x - rec.x) / W * 2.2;
+      var hp = clamp01(0.5 * (1 + Math.sin(phase)));
+      el.style.backgroundPosition = '50% ' + (3 + 97 * hp).toFixed(1) + '%';
+    }
+  }
+
+  /* ============================================================
+     9 · 背景：粒子 / 射线 / 光晕 / 颗粒（全部由 t 驱动）
+     ============================================================ */
+  var bg = document.getElementById('bg'), bgc = bg.getContext('2d');
+  var grain = document.getElementById('grain'), gc = grain.getContext('2d');
+  var PR = mulberry32(20261008);
+  var PARTICLES = [];
+  for (var pi = 0; pi < 76; pi++) {
+    PARTICLES.push({ x:PR(), y:PR(), d:1 + PR() * 2, v:0.008 + PR() * 0.022,
+                     gold:PR() < 0.25, ph:PR() * 6.28, tw:0.6 + PR() });
+  }
+  function drawBg(t, L){
+    bgc.clearRect(0, 0, W, H);
+    var si = screenAt(t), sc = SCREENS[si] || SCREENS[0];
+    /* ① 极淡射线（14 条，整组 0.25°/s） */
+    var rayA = (t * 0.25) * Math.PI / 180, n = 14;
+    for (var i = 0; i < n; i++) {
+      var a = rayA + i * (Math.PI * 2 / n);
+      var len = 1250 * kH() + 260 * kH() * Math.sin(i * 1.7 + t * 0.11);
+      var g = bgc.createLinearGradient(L.x, L.y, L.x + Math.cos(a) * len, L.y + Math.sin(a) * len);
+      g.addColorStop(0, 'rgba(215,185,121,' + (0.055 * sc.bg.rays).toFixed(4) + ')');
+      g.addColorStop(1, 'rgba(215,185,121,0)');
+      bgc.strokeStyle = g; bgc.lineWidth = 1.4 * kH();
+      bgc.beginPath(); bgc.moveTo(L.x, L.y);
+      bgc.lineTo(L.x + Math.cos(a) * len, L.y + Math.sin(a) * len); bgc.stroke();
+    }
+    /* ② 棕金光晕（呼吸周期 >30s） */
+    var pulse = 0.72 + 0.28 * Math.sin(2 * Math.PI * t / 38);
+    var rg = bgc.createRadialGradient(L.x, L.y, 0, L.x, L.y, 820 * kH());
+    rg.addColorStop(0, 'rgba(107,74,26,' + (0.085 * sc.bg.glow * pulse).toFixed(4) + ')');
+    rg.addColorStop(1, 'rgba(107,74,26,0)');
+    bgc.fillStyle = rg; bgc.beginPath(); bgc.arc(L.x, L.y, 820 * kH(), 0, 6.284); bgc.fill();
+    /* ③ 随机粒子（60–80 个，透明度 ≤0.15） */
+    for (var p = 0; p < PARTICLES.length; p++) {
+      var q = PARTICLES[p];
+      var y = (q.y - (t * q.v)) % 1; if (y < 0) y += 1;
+      var al = 0.06 + 0.09 * (0.5 + 0.5 * Math.sin(t * q.tw + q.ph));
+      bgc.fillStyle = q.gold ? 'rgba(215,185,121,' + Math.min(al, 0.15).toFixed(3) + ')'
+                             : 'rgba(245,241,232,' + Math.min(al * 0.7, 0.12).toFixed(3) + ')';
+      bgc.beginPath(); bgc.arc(q.x * W, y * H, q.d * kH(), 0, 6.284); bgc.fill();
+    }
+  }
+  var lastGrain = -1;
+  function drawGrain(t){
+    /* 胶片颗粒：≤5%、12 次/秒跳变（不逐帧重画，避免码率暴涨） */
+    var step = Math.floor(t * 12);
+    if (step === lastGrain) return;
+    lastGrain = step;
+    var r = mulberry32(step * 7919);
+    gc.clearRect(0, 0, W, H);
+    gc.globalAlpha = 0.035;
+    for (var i = 0; i < 1400; i++) {
+      var x = r() * W, y = r() * H, s = 1 + r() * 1.6;
+      gc.fillStyle = r() < 0.5 ? '#ffffff' : '#000000';
+      gc.fillRect(x, y, s, s);
+    }
+    gc.globalAlpha = 1;
+  }
+  function screenAt(t){
+    for (var i = SCREENS.length - 1; i >= 0; i--) if (t >= SCREENS[i].t0) return i;
+    return 0;
+  }
+
+  /* ============================================================
+     10 · 音效（事件表 + 采样级调度；时刻全部取自节拍表）
+     ============================================================ */
+  var SFX_DEF = {
+    soft_tick:{ file:'audio/soft_tick.wav', min:0.18 },
+    swish_soft:{ file:'audio/swish_soft.wav', min:0.35 },
+    low_impact:{ file:'audio/low_impact.wav', min:1.50 },
+    pulse_tap:{ file:'audio/pulse_tap.wav', min:0.30 },
+    sub_rise:{ file:'audio/sub_rise.wav', min:1.00 },
+    blank:{ file:'audio/blank.wav', min:0 }
+  };
+  /* 事件表：时刻取自节拍表 → 音画同源，不漂移。全片重音仅三处，本项目示例里 2 处。 */
+  var SFX_EVENTS = [
+    { t:S1_T.ball,     id:'swish_soft', dB:-17, pri:2 },   // 金球轮廓生长
+    { t:S1_T.tag1,     id:'soft_tick',  dB:-21, pri:1 },   // 标签淡入
+    { t:S1_T.title2,   id:'soft_tick',  dB:-22, pri:1 },
+    { t:S2_T.ring,     id:'swish_soft', dB:-17, pri:2 },   // 圆环轮廓生长
+    { t:S2_T.orb,      id:'pulse_tap',  dB:-21, pri:1 },   // 环上金点脉动
+    { t:S2_T.goldTag,  id:'soft_tick',  dB:-22, pri:1 },
+    { t:S2_T.title,    id:'low_impact', dB:-12, pri:3 },   // ★重音① 金属标题
+    { t:S3_T.cluL,     id:'swish_soft', dB:-18, pri:2 },   // 球簇浮现
+    { t:S3_T.bars,     id:'swish_soft', dB:-19, pri:2 },   // 对比柱生长
+    { t:S3_T.num,      id:'low_impact', dB:-12, pri:3 },   // ★重音② 金属大数字
+    { t:S3_T.label,    id:'soft_tick',  dB:-22, pri:1 }
+  ];
+  var SFX_MAX_CONCURRENT = 2;
+  var SFX = { on: params.get('sfx') !== '0', ctx:null, buf:{}, el:{}, log:[], bgm:null,
+              bgmVol:parseFloat(params.get('bgmvol') || '-19.2') };
+  function audioEnable(){
+    if (!SFX.ctx) {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) SFX.ctx = new AC();
+    }
+    if (SFX.ctx && SFX.ctx.state === 'suspended') SFX.ctx.resume();
+    loadSfx();
+    loadBgm();
+  }
+  function loadSfx(){
+    Object.keys(SFX_DEF).forEach(function(k){
+      if (SFX.buf[k] || SFX.el[k]) return;
+      var f = SFX_DEF[k].file;
+      if (SFX.ctx) {
+        fetch(f).then(function(r){ return r.arrayBuffer(); })
+          .then(function(b){ return SFX.ctx.decodeAudioData(b); })
+          .then(function(ab){ SFX.buf[k] = ab; })
+          .catch(function(){ /* 缺素材静默降级，绝不 console.warn */ });
+      } else {
+        var el = new Audio(f); el.preload = 'auto'; SFX.el[k] = el;
+      }
+    });
+  }
+  function loadBgm(){
+    if (!SFX.bgm && params.get('bgm') !== '0') {
+      SFX.bgm = new Audio('audio/ambient_pad.mp3');
+      SFX.bgm.loop = true; SFX.bgm.preload = 'auto';
+      SFX.bgm.volume = Math.pow(10, SFX.bgmVol / 20);
+    }
+  }
+  var SFX_MIN_GAP = {};
+  function sfxPlay(e, clockNow){
+    var def = SFX_DEF[e.id]; if (!def) return;
+    var last = SFX_MIN_GAP[e.id];
+    if (last != null && clockNow - last < def.min) return;
+    var live = SFX.log.filter(function(x){ return x.dur != null && clockNow - x.at < x.dur; });
+    if (live.length >= SFX_MAX_CONCURRENT) {
+      var lowest = live.sort(function(a, b){ return a.pri - b.pri; })[0];
+      if (lowest && lowest.pri >= e.pri) return;
+    }
+    SFX_MIN_GAP[e.id] = clockNow;
+    var dur = 0.5;
+    if (SFX.buf[e.id]) {
+      var g = SFX.ctx.createGain();
+      g.gain.value = Math.pow(10, e.dB / 20);
+      var src = SFX.ctx.createBufferSource();
+      src.buffer = SFX.buf[e.id]; src.connect(g); g.connect(SFX.ctx.destination);
+      src.start(clockNow);                     // 采样级调度：触发偏差为 0
+      dur = SFX.buf[e.id].duration;
+    } else if (SFX.el[e.id]) {
+      var el = SFX.el[e.id];
+      el.currentTime = 0; el.volume = Math.pow(10, e.dB / 20);
+      el.play().catch(function(){});
+      dur = el.duration || 0.5;
+    }
+    SFX.log.push({ t:e.t, id:e.id, dB:e.dB, pri:e.pri, at:clockNow, dur:dur });
+  }
+  function sfxTick(prevT, curT, live, clockNow){
+    /* 只在真实播放时发声：跳转 / 回退 / 静态帧一律不触发 */
+    for (var i = 0; i < SFX_EVENTS.length; i++) {
+      var e = SFX_EVENTS[i];
+      if (e._done) continue;
+      if (e.t <= curT) {
+        e._done = true;
+        if (live && e.t > prevT && e.t <= curT) sfxPlay(e, clockNow);
+      }
+    }
+  }
+  function bgmSync(t){
+    loadBgm();
+    if (SFX.bgm && SFX.bgm.paused) SFX.bgm.play().catch(function(){});
+  }
+
+  /* ============================================================
+     11 · 主渲染 + 时间循环
+     ============================================================ */
+  function render(t){
+    var L = lightAt(t), si = screenAt(t), sc = SCREENS[si];
+    drawBg(t, L); drawGrain(t);
+    updateItems(t, L);
+    updateBall7(t); updateBalls(t); updateRing(t, L); updateBars(t);
+    for (var i = 0; i < pieceEls.length; i++) renderPiece(pieceEls[i], t, L);
+    /* 顶栏 / 底栏：本屏信息随手记 */
+    var inFade = fadeIn(t, sc.t0, 0.5), outFade = fadeOut(t, sc.t1, OUT_LEAD);
+    kickerEl.style.opacity = (0.9 * inFade * outFade).toFixed(3);
+    captionEl.style.opacity = (0.9 * inFade * outFade).toFixed(3);
+    capNote.textContent = sc.note;
+    kickNote.textContent = sc.id.toUpperCase();
+    capIdx.textContent = ('0' + (si + 1)).slice(-2) + ' / 0' + SCREENS.length;
+    progressBar.style.width = (clamp01(t / TOTAL) * 100).toFixed(2) + '%';
+    if (params.get('debug') === '1') {
+      debugEl.textContent = 't=' + t.toFixed(2) + 's  screen=' + (si + 1) + '  light=(' +
+        Math.round(L.x) + ',' + Math.round(L.y) + ')';
+    }
+  }
+
+  function fit(){
+    var s = Math.min(window.innerWidth / W, window.innerHeight / H);
+    stageEl.style.transform = 'translate(-50%,-50%) scale(' + s + ')';
+  }
+  window.addEventListener('resize', fit);
+
+  var rate = parseFloat(params.get('rate') || '1') || 1;
+  var staticFrame = !!params.get('t') || params.get('autoplay') === '0';
+  var startAt = 0, curT = 0, playing = !staticFrame, t0ms = null;
+
+  /* ---- 量测钩子：所有体检脚本都从这里取数（不要在脚本里写死画布） ---- */
+  window.__seek = function(sec){ playing = false; staticFrame = true;
+    curT = Math.max(0, Math.min(TOTAL, sec)); render(curT); };
+  window.__state = function(){ return { t:curT, playing:playing, total:TOTAL, w:W, h:H }; };
+  window.__canvas = function(){ return { w:W, h:H, aspect:+(W / H).toFixed(4), safe:SAFE,
+    safeRatio:{ left:.05, right:.95, top:.05, bottom:.05 },
+    scale:{ kH:kH(), rFont160:rFont(160), rSize64:rSize(64) } }; };
+  window.__light = function(){ var L = lightAt(curT);
+    return { t:+curT.toFixed(3), x:+L.x.toFixed(2), y:+L.y.toFixed(2), r:LIGHT_R }; };
+  window.__lightKeys = function(){ return LIGHT_KEYS; };
+  window.__screens = function(){ return SCREENS; };
+  window.__pieces = function(){ return PIECES; };
+  window.__items = function(){ var out = {}, k;
+    for (k in ITEMS) if (Object.prototype.hasOwnProperty.call(ITEMS, k)) {
+      var it = ITEMS[k];
+      out[k] = { cx:it.cx, cy:it.cy, ev:it.ev, dx:it.dx, dy:it.dy, k:+it.k.toFixed(4),
+                 out:(ITEM_SPEC[k] || {}).out, light:+it.light.toFixed(4), on:+it.on.toFixed(4) };
+    }
+    out.t = +curT.toFixed(3); return out; };
+  window.__screenItems = function(i){ var out = [], k, ev;
+    for (k in ITEMS) if (Object.prototype.hasOwnProperty.call(ITEMS, k)) {
+      ev = (ITEM_SPEC[k] || {}).ev;
+      if (ev != null && ev >= SCREENS[i].t0 && ev < SCREENS[i].t1) out.push(k);
+    }
+    return out; };
+  window.__structStarts = function(){ return [S1_T.ball, S2_T.ring, S2_T.gold, S2_T.gray,
+    S3_T.cluL, S3_T.cluR, S3_T.bars]; };
+  window.__clusterRadii = function(){ var out = {}, k;
+    for (k in ITEMS) if (Object.prototype.hasOwnProperty.call(ITEMS, k)) {
+      var els = document.querySelectorAll('.mball[data-item="' + k + '"]');
+      if (!els.length) continue;
+      var it = ITEMS[k], sum = 0, cnt = 0;
+      for (var i = 0; i < els.length; i++) {
+        var m = /translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)/.exec(els[i].style.transform || '');
+        if (!m) continue;
+        var bx = +m[1] + els[i].offsetWidth / 2, by = +m[2] + els[i].offsetHeight / 2;
+        sum += Math.sqrt(Math.pow(bx - (it.cx + it.dx), 2) + Math.pow(by - (it.cy + it.dy), 2));
+        cnt++;
+      }
+      if (cnt) out[k] = +(sum / cnt).toFixed(1);
+    }
+    return out; };
+  window.__narrative = function(){
+    var svg = document.getElementById('ringS2');
+    return { t:+curT.toFixed(3),
+      ring:{ op:+(svg ? svg.style.opacity : 0) || 0,
+             dash:svg ? parseFloat(svg.querySelector('.ring-line').getAttribute('stroke-dashoffset')) : -1,
+             circ:RING.c, r:RING.r,
+             width:svg ? parseFloat(svg.querySelector('.ring-line').getAttribute('stroke-width')) : 0,
+             hot:svg ? svg.querySelector('.ring-hot').getAttribute('stroke') : '' },
+      dots:[].map.call(document.querySelectorAll('.ring-dot'), function(d){ return +d.style.opacity || 0; }),
+      chars:[].map.call(document.querySelectorAll('.ringtext span'), function(s){ return +s.style.opacity || 0; }),
+      balls:[].map.call(document.querySelectorAll('.mball'), function(b){
+        return { tf:b.style.transform, op:+b.style.opacity || 0, gold:b.classList.contains('gold') }; }),
+      gold:ITEMS.gold, gray:ITEMS.gray, ball7:ITEMS.ball7, num4x:ITEMS.num4x };
+  };
+  window.__audioEvents = function(){ return { events:SFX_EVENTS, defs:SFX_DEF,
+    maxConcurrent:SFX_MAX_CONCURRENT, sfxOn:SFX.on, bgm:SFX.bgm ? SFX.bgm.src : null, bgmVol:SFX.bgmVol }; };
+  window.__audioLog = function(){ return SFX.log.slice(); };
+  window.__audioStatus = function(){ var ready = [];
+    Object.keys(SFX_DEF).forEach(function(k){
+      ready.push(k + ':' + (SFX.buf[k] ? 'buffer' : (SFX.el[k] ? 'element' : 'missing'))); });
+    return { on:SFX.on, ctx:SFX.ctx ? SFX.ctx.state : 'none', sounds:ready, played:SFX.log.length }; };
+  window.__audioEnable = function(){ audioEnable(); return window.__audioStatus(); };
+
+  var lastFrameT = -1;
+  function loop(now){
+    var prevT = lastFrameT;
+    if (playing) {
+      if (t0ms === null) t0ms = now - curT * 1000 / rate;
+      curT = (now - t0ms) / 1000 * rate;
+      if (curT >= TOTAL) { curT = TOTAL; playing = false; }
+    }
+    var clockNow = SFX.ctx ? SFX.ctx.currentTime : now / 1000;
+    render(curT);
+    var live = playing && !staticFrame;
+    sfxTick(prevT, curT, live, clockNow);
+    if (live) bgmSync(curT);
+    lastFrameT = curT;
+    requestAnimationFrame(loop);
+  }
+  window.addEventListener('keydown', function(e){
+    if (e.code === 'Space') { e.preventDefault();
+      if (playing) playing = false; else { playing = true; t0ms = null; audioEnable(); } }
+    else if (e.key === 'r' || e.key === 'R') { curT = startAt; t0ms = null; playing = true; staticFrame = false; }
+  });
+  /* 浏览器自动播放策略：默认等第一次交互；?sfx=1 直接尝试开启 */
+  window.addEventListener('pointerdown', function(){ if (SFX.on) audioEnable(); }, { once:true });
+  if (params.get('sfx') === '1') audioEnable();
+
+  if (staticFrame) {
+    curT = Math.max(0, Math.min(TOTAL, parseFloat(params.get('t')) || 0));
+    playing = false; render(curT);
+  }
+  fit();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
